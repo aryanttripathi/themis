@@ -31,8 +31,8 @@ public final class ThemisCli implements Runnable {
                 .setExecutionExceptionHandler((ex, cmd, parseResult) -> {
                     cmd.getErr().println("error: " + ex.getMessage());
                     return EXIT_ERROR;
-                })
-                .setExitCodeOnInvalidInput(EXIT_ERROR);
+                });
+        // picocli already returns 2 (CommandLine.ExitCode.USAGE) for invalid input, matching EXIT_ERROR.
     }
 
     @Override
