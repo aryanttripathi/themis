@@ -1,0 +1,97 @@
+package io.themis.cli;
+
+import io.themis.Themis;
+import io.themis.config.ScanConfig;
+import io.themis.model.Finding;
+import io.themis.model.ScanReport;
+import io.themis.model.Severity;
+import io.themis.report.JsonReportWriter;
+import picocli.CommandLine.Command;
+import picocli.CommandLine.Option;
+import picocli.CommandLine.Parameters;
+import picocli.CommandLine.Spec;
+import picocli.CommandLine.Model.CommandSpec;
+
+import java.io.PrintWriter;
+import java.nio.file.Path;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.OptionalInt;
+import java.util.Set;
+import java.util.concurrent.Callable;
+
+@Command(name = "scan", mixinStandardHelpOptions = true, description = "Scan a project directory.")
+final class ScanCommand implements Callable<Integer> {
+
+    @Spec
+    CommandSpec spec;
+
+    @Parameters(index = "0", defaultValue = ".", description = "Project directory (default: current).")
+    Path projectDir;
+
+    @Option(names = "--format", split = ",", defaultValue = "console",
+            description = "Output formats: console, json (default: ${DEFAULT-VALUE}).")
+    List<String> formats;
+
+    @Option(names = "--output", defaultValue = "themis-report",
+            description = "Directory for report files (default: ${DEFAULT-VALUE}).")
+    Path outputDir;
+
+    @Option(names = "--only", split = ",", description = "Run only these analyzers, e.g. licenses,javaversion.")
+    Set<String> only = new HashSet<>();
+
+    @Option(names = "--fail-on", defaultValue = "HIGH",
+            description = "Exit 1 if any finding is at or above this severity: ${COMPLETION-CANDIDATES}.")
+    Severity failOn;
+
+    @Option(names = "--java-release", description = "Override the Java release detected from the POM.")
+    Integer javaRelease;
+
+    @Option(names = "--offline", description = "Use only the local cache and ~/.m2.")
+    boolean offline;
+
+    @Option(names = "--include-test", description = "Include test-scoped dependencies.")
+    boolean includeTest;
+
+    @Override
+    public Integer call() throws Exception {
+        ScanConfig config = new ScanConfig(
+                only, failOn,
+                javaRelease == null ? OptionalInt.empty() : OptionalInt.of(javaRelease),
+                offline, includeTest);
+
+        ScanReport report = Themis.scan(projectDir, config);
+        PrintWriter out = spec.commandLine().getOut();
+
+        for (String format : formats) {
+            switch (format.trim().toLowerCase()) {
+                case "console" -> printConsole(report, out);
+                case "json" -> out.println("JSON report: " + new JsonReportWriter().write(report, outputDir));
+                default -> {
+                    spec.commandLine().getErr().println("error: unsupported format '" + format + "'");
+                    return ThemisCli.EXIT_ERROR;
+                }
+            }
+        }
+        out.flush();
+        return report.hasFindingsAtLeast(failOn) ? ThemisCli.EXIT_FINDINGS : ThemisCli.EXIT_OK;
+    }
+
+    private static void printConsole(ScanReport r, PrintWriter out) {
+        out.println("themis " + r.toolVersion());
+        out.println("Project      : " + r.project().coordinate() + " (Java " + r.project().javaRelease() + ")");
+        out.println("Dependencies : " + r.graph().dependencies().size() + " (" + r.graph().directCount() + " direct)");
+
+        Map<Severity, Long> counts = r.countBySeverity();
+        out.printf("Findings     : %d critical, %d high, %d medium, %d low, %d info%n",
+                counts.get(Severity.CRITICAL), counts.get(Severity.HIGH), counts.get(Severity.MEDIUM),
+                counts.get(Severity.LOW), counts.get(Severity.INFO));
+
+        for (Finding f : r.findings()) {
+            out.printf("  [%-8s] %-13s %s%n", f.severity(), f.type(), f.title());
+        }
+        r.errors().forEach(e -> out.println("  analyzer '" + e.analyzer() + "' failed: " + e.message()));
+        out.println("Completed in " + r.duration().toMillis() + " ms");
+    }
+}
