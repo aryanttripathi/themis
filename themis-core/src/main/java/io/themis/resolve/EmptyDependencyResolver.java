@@ -7,18 +7,40 @@ import io.themis.model.ProjectInfo;
 import java.nio.file.Path;
 
 /**
- * Phase-1 placeholder that returns no dependencies, so the pipeline runs end to end
- * before {@code MavenDependencyResolver} (Maven Resolver based) lands. See docs/LLD.md section 4.
+ * Takes project facts from another resolver but reports no dependencies. Useful as a test double
+ * and for running source-only analyzers without dependency resolution.
  */
 public final class EmptyDependencyResolver implements DependencyResolver {
 
-    @Override
-    public boolean supports(Path projectDir) {
-        return true;
+    private final DependencyResolver projectFacts;
+
+    public EmptyDependencyResolver(DependencyResolver projectFacts) {
+        this.projectFacts = projectFacts;
     }
 
     @Override
-    public DependencyGraph resolve(ProjectInfo project, ScanConfig config) {
-        return DependencyGraph.empty(project.coordinate());
+    public boolean supports(Path projectDir) {
+        return projectFacts.supports(projectDir);
+    }
+
+    @Override
+    public ProjectSession open(Path projectDir, ScanConfig config) {
+        ProjectSession delegate = projectFacts.open(projectDir, config);
+        return new ProjectSession() {
+            @Override
+            public ProjectInfo project() {
+                return delegate.project();
+            }
+
+            @Override
+            public DependencyGraph resolveDependencies() {
+                return DependencyGraph.empty(delegate.project().coordinate());
+            }
+
+            @Override
+            public void close() {
+                delegate.close();
+            }
+        };
     }
 }

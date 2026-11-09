@@ -23,6 +23,18 @@
             <groupId>info.picocli</groupId>
             <artifactId>picocli</artifactId>
         </dependency>
+        <!-- The resolver logs through SLF4J; the CLI reports errors itself, so silence it. -->
+        <dependency>
+            <groupId>org.slf4j</groupId>
+            <artifactId>slf4j-nop</artifactId>
+            <scope>runtime</scope>
+        </dependency>
+        <dependency>
+            <groupId>io.themis</groupId>
+            <artifactId>themis-core</artifactId>
+            <type>test-jar</type>
+            <scope>test</scope>
+        </dependency>
         <dependency>
             <groupId>org.junit.jupiter</groupId>
             <artifactId>junit-jupiter</artifactId>
@@ -50,6 +62,18 @@
                                     <mainClass>io.themis.cli.ThemisCli</mainClass>
                                 </transformer>
                                 <transformer implementation="org.apache.maven.plugins.shade.resource.ServicesResourceTransformer"/>
+                                <!-- A license scanner must comply itself: merge every dependency's NOTICE
+                                     into one META-INF/NOTICE and keep a single Apache LICENSE (all
+                                     overlapping LICENSE files are Apache-2.0). -->
+                                <transformer implementation="org.apache.maven.plugins.shade.resource.ApacheNoticeResourceTransformer">
+                                    <addHeader>false</addHeader>
+                                </transformer>
+                                <transformer implementation="org.apache.maven.plugins.shade.resource.ApacheLicenseResourceTransformer"/>
+                                <!-- ...which drops every LICENSE file, so add the one Apache-2.0 text back. -->
+                                <transformer implementation="org.apache.maven.plugins.shade.resource.IncludeResourceTransformer">
+                                    <resource>META-INF/LICENSE</resource>
+                                    <file>${project.basedir}/../LICENSE</file>
+                                </transformer>
                             </transformers>
                             <filters>
                                 <filter>
@@ -60,6 +84,9 @@
                                         <exclude>META-INF/*.RSA</exclude>
                                         <exclude>module-info.class</exclude>
                                         <exclude>META-INF/versions/*/module-info.class</exclude>
+                                        <!-- Sisu DI indexes of the Maven libraries: unused (the resolver is
+                                             wired by RepositorySystemSupplier) and they cannot be merged. -->
+                                        <exclude>META-INF/sisu/**</exclude>
                                     </excludes>
                                 </filter>
                             </filters>

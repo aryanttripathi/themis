@@ -28,9 +28,60 @@
             <artifactId>jackson-datatype-jsr310</artifactId>
         </dependency>
 
+        <!-- Maven Resolver + Maven 3.9 model machinery (P1, docs/LLD.md section 4).
+             The sisu/javax.inject annotations are only needed for DI containers; we wire
+             everything by hand via RepositorySystemSupplier, so they are excluded (as the
+             supplier module itself does). -->
+        <dependency>
+            <groupId>org.apache.maven.resolver</groupId>
+            <artifactId>maven-resolver-api</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.maven.resolver</groupId>
+            <artifactId>maven-resolver-spi</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.maven.resolver</groupId>
+            <artifactId>maven-resolver-util</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.maven.resolver</groupId>
+            <artifactId>maven-resolver-supplier</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.maven</groupId>
+            <artifactId>maven-resolver-provider</artifactId>
+            <exclusions>
+                <exclusion><groupId>javax.inject</groupId><artifactId>javax.inject</artifactId></exclusion>
+                <exclusion><groupId>org.eclipse.sisu</groupId><artifactId>org.eclipse.sisu.inject</artifactId></exclusion>
+            </exclusions>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.maven</groupId>
+            <artifactId>maven-model</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.maven</groupId>
+            <artifactId>maven-model-builder</artifactId>
+            <exclusions>
+                <exclusion><groupId>javax.inject</groupId><artifactId>javax.inject</artifactId></exclusion>
+                <exclusion><groupId>org.eclipse.sisu</groupId><artifactId>org.eclipse.sisu.inject</artifactId></exclusion>
+            </exclusions>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.maven</groupId>
+            <artifactId>maven-settings</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.maven</groupId>
+            <artifactId>maven-settings-builder</artifactId>
+            <exclusions>
+                <exclusion><groupId>javax.inject</groupId><artifactId>javax.inject</artifactId></exclusion>
+                <exclusion><groupId>org.eclipse.sisu</groupId><artifactId>org.eclipse.sisu.inject</artifactId></exclusion>
+            </exclusions>
+        </dependency>
+
         <!-- Added in later phases (see docs/LLD.md):
-             org.apache.maven.resolver:maven-resolver-supplier  (P1 resolver)
-             org.apache.maven:maven-model-builder               (P1 effective POM)
              com.github.javaparser:javaparser-symbol-solver-core (P5/P6 AST)
         -->
 
@@ -43,4 +94,19 @@
             <artifactId>assertj-core</artifactId>
         </dependency>
     </dependencies>
+
+    <build>
+        <plugins>
+            <!-- Publish test fixtures (FixtureRepo etc.) so themis-cli tests can reuse them. -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-jar-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <goals><goal>test-jar</goal></goals>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
 </project>

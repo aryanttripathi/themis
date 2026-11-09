@@ -12,7 +12,7 @@ Scans a Java/Maven project and reports, in one place:
 
 Only package coordinates leave your machine; source code never does.
 
-> Status: Phase 1 scaffold. The engine, model, Java-version analyzer, license classifier and CLI work; Maven dependency resolution is next. See [docs/LLD.md](docs/LLD.md#17-phase-1-implementation-checklist).
+> Status: Phase 1. The engine, model, Maven dependency resolution (Maven Resolver), Java-version analyzer, license classifier and CLI work. See [docs/LLD.md](docs/LLD.md#17-phase-1-implementation-checklist).
 
 ## Docs
 
@@ -27,6 +27,8 @@ Requires JDK 17+ and Maven 3.9+.
 ```bash
 mvn verify
 java -jar themis-cli/target/themis.jar scan /path/to/project --format console,json
+java -jar themis-cli/target/themis.jar deps /path/to/project --include-test   # add --ignore-pom-repositories for untrusted projects
+mvn -Pnetwork verify     # also run the tests that need Maven Central
 ```
 
 ## Modules

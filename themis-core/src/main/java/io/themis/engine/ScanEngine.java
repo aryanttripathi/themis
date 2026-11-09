@@ -7,7 +7,7 @@ import io.themis.model.Finding;
 import io.themis.model.ProjectInfo;
 import io.themis.model.ScanReport;
 import io.themis.resolve.DependencyResolver;
-import io.themis.resolve.ProjectInspector;
+import io.themis.resolve.ProjectSession;
 
 import java.nio.file.Path;
 import java.time.Duration;
@@ -22,19 +22,16 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 
 /**
- * Orchestrates a scan: inspect project, resolve dependencies, run analyzers stage by stage.
+ * Orchestrates a scan: open a project session (model + dependency graph), run analyzers stage by stage.
  * A failing analyzer is recorded as an {@link AnalyzerError}; it never aborts the scan.
  */
 public final class ScanEngine {
 
-    private final ProjectInspector inspector;
     private final DependencyResolver resolver;
     private final List<Analyzer> analyzers;
     private final String toolVersion;
 
-    public ScanEngine(ProjectInspector inspector, DependencyResolver resolver,
-                      List<Analyzer> analyzers, String toolVersion) {
-        this.inspector = inspector;
+    public ScanEngine(DependencyResolver resolver, List<Analyzer> analyzers, String toolVersion) {
         this.resolver = resolver;
         this.analyzers = List.copyOf(analyzers);
         this.toolVersion = toolVersion;
@@ -43,8 +40,12 @@ public final class ScanEngine {
     public ScanReport scan(Path projectDir, ScanConfig config) {
         Instant start = Instant.now();
 
-        ProjectInfo project = inspector.inspect(projectDir, config);
-        DependencyGraph graph = resolver.resolve(project, config);
+        ProjectInfo project;
+        DependencyGraph graph;
+        try (ProjectSession session = resolver.open(projectDir, config)) {
+            project = session.project();
+            graph = session.resolveDependencies();
+        }
         ScanContext ctx = new ScanContext(project, graph, config);
 
         List<Finding> findings = new CopyOnWriteArrayList<>();

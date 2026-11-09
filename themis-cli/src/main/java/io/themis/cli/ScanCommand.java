@@ -7,7 +7,9 @@ import io.themis.model.ScanReport;
 import io.themis.model.Severity;
 import io.themis.report.JsonReportWriter;
 import picocli.CommandLine.Command;
+import picocli.CommandLine.Mixin;
 import picocli.CommandLine.Option;
+import picocli.CommandLine.ParentCommand;
 import picocli.CommandLine.Parameters;
 import picocli.CommandLine.Spec;
 import picocli.CommandLine.Model.CommandSpec;
@@ -16,6 +18,7 @@ import java.io.PrintWriter;
 import java.nio.file.Path;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.OptionalInt;
 import java.util.Set;
@@ -54,6 +57,12 @@ final class ScanCommand implements Callable<Integer> {
     @Option(names = "--include-test", description = "Include test-scoped dependencies.")
     boolean includeTest;
 
+    @Mixin
+    ResolverMixin resolver;
+
+    @ParentCommand
+    ThemisCli parent;
+
     @Override
     public Integer call() throws Exception {
         ScanConfig config = new ScanConfig(
@@ -61,11 +70,11 @@ final class ScanCommand implements Callable<Integer> {
                 javaRelease == null ? OptionalInt.empty() : OptionalInt.of(javaRelease),
                 offline, includeTest);
 
-        ScanReport report = Themis.scan(projectDir, config);
+        ScanReport report = Themis.defaultEngine(resolver.apply(parent.baseOptions())).scan(projectDir, config);
         PrintWriter out = spec.commandLine().getOut();
 
         for (String format : formats) {
-            switch (format.trim().toLowerCase()) {
+            switch (format.trim().toLowerCase(Locale.ROOT)) {
                 case "console" -> printConsole(report, out);
                 case "json" -> out.println("JSON report: " + new JsonReportWriter().write(report, outputDir));
                 default -> {
@@ -75,6 +84,7 @@ final class ScanCommand implements Callable<Integer> {
             }
         }
         out.flush();
+        DepsCommand.printWarnings(report.graph(), spec.commandLine().getErr());
         return report.hasFindingsAtLeast(failOn) ? ThemisCli.EXIT_FINDINGS : ThemisCli.EXIT_OK;
     }
 
@@ -84,12 +94,12 @@ final class ScanCommand implements Callable<Integer> {
         out.println("Dependencies : " + r.graph().dependencies().size() + " (" + r.graph().directCount() + " direct)");
 
         Map<Severity, Long> counts = r.countBySeverity();
-        out.printf("Findings     : %d critical, %d high, %d medium, %d low, %d info%n",
+        out.printf(Locale.ROOT, "Findings     : %d critical, %d high, %d medium, %d low, %d info%n",
                 counts.get(Severity.CRITICAL), counts.get(Severity.HIGH), counts.get(Severity.MEDIUM),
                 counts.get(Severity.LOW), counts.get(Severity.INFO));
 
         for (Finding f : r.findings()) {
-            out.printf("  [%-8s] %-13s %s%n", f.severity(), f.type(), f.title());
+            out.printf(Locale.ROOT, "  [%-8s] %-13s %s%n", f.severity(), f.type(), f.title());
         }
         r.errors().forEach(e -> out.println("  analyzer '" + e.analyzer() + "' failed: " + e.message()));
         out.println("Completed in " + r.duration().toMillis() + " ms");

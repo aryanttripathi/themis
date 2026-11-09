@@ -62,6 +62,7 @@ public final class JsonReportWriter implements ReportWriter {
         summary.put("bySeverity", r.countBySeverity());
         doc.put("summary", summary);
         doc.put("dependencies", r.graph().dependencies());
+        doc.put("warnings", r.graph().warnings());
         doc.put("findings", r.findings());
         doc.put("errors", r.errors());
         return doc;

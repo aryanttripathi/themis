@@ -1,6 +1,7 @@
 package io.themis.cli;
 
 import io.themis.Themis;
+import io.themis.resolve.maven.ResolverOptions;
 import picocli.CommandLine;
 import picocli.CommandLine.Command;
 
@@ -10,7 +11,7 @@ import picocli.CommandLine.Command;
         versionProvider = ThemisCli.VersionProvider.class,
         description = "Scans a Java project for dependency licenses, vulnerabilities, "
                 + "Java-version compatibility, and leaked secrets/PII.",
-        subcommands = {ScanCommand.class, CommandLine.HelpCommand.class})
+        subcommands = {ScanCommand.class, DepsCommand.class, CommandLine.HelpCommand.class})
 public final class ThemisCli implements Runnable {
 
     /** Exit codes (docs/HLD.md section 6). */
@@ -21,12 +22,27 @@ public final class ThemisCli implements Runnable {
     @CommandLine.Spec
     CommandLine.Model.CommandSpec spec;
 
-    public static void main(String[] args) {
-        System.exit(newCommandLine().execute(args));
+    /** Resolver environment the subcommands start from ({@code --settings} etc. adjust it). */
+    private final ResolverOptions baseOptions;
+
+    ThemisCli(ResolverOptions baseOptions) {
+        this.baseOptions = baseOptions;
     }
 
-    static CommandLine newCommandLine() {
-        return new CommandLine(new ThemisCli())
+    ResolverOptions baseOptions() {
+        return baseOptions;
+    }
+
+    public static void main(String[] args) {
+        System.exit(newCommandLine(ResolverOptions.defaults()).execute(args));
+    }
+
+    /**
+     * @param baseOptions Maven environment to resolve with; production passes {@link ResolverOptions#defaults()},
+     *                    tests pass fixture options so nothing leaks in from the real environment
+     */
+    static CommandLine newCommandLine(ResolverOptions baseOptions) {
+        return new CommandLine(new ThemisCli(baseOptions))
                 .setCaseInsensitiveEnumValuesAllowed(true)
                 .setExecutionExceptionHandler((ex, cmd, parseResult) -> {
                     cmd.getErr().println("error: " + ex.getMessage());

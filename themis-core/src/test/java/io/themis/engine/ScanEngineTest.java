@@ -7,7 +7,8 @@ import io.themis.model.FindingType;
 import io.themis.model.ScanReport;
 import io.themis.model.Severity;
 import io.themis.resolve.EmptyDependencyResolver;
-import io.themis.resolve.ProjectInspector;
+import io.themis.resolve.maven.MavenDependencyResolver;
+import io.themis.testing.FixtureRepo;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -25,6 +26,9 @@ class ScanEngineTest {
 
     @TempDir
     Path project;
+
+    @TempDir
+    Path fixtures;
 
     private static final Coordinate DEP = Coordinate.parse("com.example:lib:1.0");
 
@@ -80,7 +84,9 @@ class ScanEngineTest {
     }
 
     private ScanEngine engine(Analyzer... analyzers) {
-        return new ScanEngine(new ProjectInspector(), new EmptyDependencyResolver(), List.of(analyzers), "test");
+        // Project facts from the real Maven model, hermetic settings, no dependency resolution.
+        MavenDependencyResolver maven = new MavenDependencyResolver(FixtureRepo.create(fixtures).options());
+        return new ScanEngine(new EmptyDependencyResolver(maven), List.of(analyzers), "test");
     }
 
     private void writePom(String javaVersion) throws IOException {
