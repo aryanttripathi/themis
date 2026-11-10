@@ -76,7 +76,7 @@ public record LicensePolicy(Map<LicenseCategory, Severity> severities, Map<Strin
                 .map(Map.Entry::getValue);
     }
 
-    static boolean matches(String pattern, String value) {
+    public static boolean matches(String pattern, String value) {
         StringBuilder regex = new StringBuilder();
         for (String part : pattern.split("\\*", -1)) {
             if (!regex.isEmpty()) regex.append(".*");

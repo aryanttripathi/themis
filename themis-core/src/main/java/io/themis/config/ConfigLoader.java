@@ -65,6 +65,12 @@ public final class ConfigLoader {
         public FailOnDto failOn;
         public LicensesDto licenses;
         public NetworkDto network;
+        public PrivacyDto privacy;
+    }
+
+    static final class PrivacyDto {
+        public List<String> privateArtifacts;
+        public Boolean projectGroupPrivate;
     }
 
     static final class FailOnDto {
@@ -189,7 +195,14 @@ public final class ConfigLoader {
             throw new ConfigException(file + ": network.cacheTtlHours must not be negative");
         }
         return new ConfigFile(file, dto.javaRelease == null ? OptionalInt.empty() : OptionalInt.of(dto.javaRelease),
-                analyzers, failOn, severities, silenced, overrides, allow, offline, ttl);
+                analyzers, failOn, severities, silenced, overrides, allow, offline, ttl, privacy(dto.privacy));
+    }
+
+    private static Optional<io.themis.privacy.PrivacyConfig> privacy(PrivacyDto p) {
+        if (p == null) return Optional.empty();
+        return Optional.of(new io.themis.privacy.PrivacyConfig(
+                p.privateArtifacts == null ? Set.of() : Set.copyOf(p.privateArtifacts),
+                p.projectGroupPrivate == null || p.projectGroupPrivate));
     }
 
     /** Case-insensitive (locale-independent); {@code NONE} = empty, only where allowed. */

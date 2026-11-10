@@ -85,8 +85,8 @@ public final class FileCache {
         node.put("key", key);
         node.set("value", MAPPER.valueToTree(value));
         try {
-            Files.createDirectories(file.getParent());
-            Path tmp = Files.createTempFile(file.getParent(), ".entry", ".tmp");
+            createPrivateDirectories(file.getParent());
+            Path tmp = Files.createTempFile(file.getParent(), ".entry", ".tmp");   // created rw------- on POSIX
             Files.writeString(tmp, MAPPER.writeValueAsString(node), StandardCharsets.UTF_8);
             try {
                 Files.move(tmp, file, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
@@ -95,6 +95,30 @@ public final class FileCache {
             }
         } catch (IOException e) {
             throw new UncheckedIOException("Cannot write cache entry " + file, e);
+        }
+    }
+
+    /**
+     * Creates missing directories from the cache root down, owner-only ({@code rwx------}) where the
+     * file system supports POSIX permissions: the cache reveals which packages your projects use.
+     */
+    private void createPrivateDirectories(Path dir) throws IOException {
+        boolean posix = dir.getFileSystem().supportedFileAttributeViews().contains("posix");
+        java.util.Deque<Path> missing = new java.util.ArrayDeque<>();
+        for (Path p = dir; p != null && !Files.isDirectory(p); p = p.getParent()) {
+            missing.push(p);
+            if (p.equals(root)) break;
+        }
+        for (Path p : missing) {
+            if (posix && p.startsWith(root)) {
+                Files.createDirectories(p, java.nio.file.attribute.PosixFilePermissions.asFileAttribute(
+                        java.nio.file.attribute.PosixFilePermissions.fromString("rwx------")));
+            } else {
+                Files.createDirectories(p);
+            }
+        }
+        if (posix && Files.isDirectory(root)) {
+            Files.setPosixFilePermissions(root, java.nio.file.attribute.PosixFilePermissions.fromString("rwx------"));
         }
     }
 

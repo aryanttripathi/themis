@@ -11,7 +11,7 @@ import picocli.CommandLine.Command;
         versionProvider = ThemisCli.VersionProvider.class,
         description = "Scans a Java project for dependency licenses, vulnerabilities, "
                 + "Java-version compatibility, and leaked secrets/PII.",
-        subcommands = {ScanCommand.class, DepsCommand.class, LicensesCommand.class, CommandLine.HelpCommand.class})
+        subcommands = {ScanCommand.class, DepsCommand.class, LicensesCommand.class, VulnsCommand.class, CommandLine.HelpCommand.class})
 public final class ThemisCli implements Runnable {
 
     /** Exit codes (docs/HLD.md section 6). */

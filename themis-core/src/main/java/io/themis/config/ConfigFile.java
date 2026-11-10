@@ -31,7 +31,8 @@ public record ConfigFile(
         Map<String, String> overrides,
         Set<String> allowArtifacts,
         Optional<Boolean> offline,
-        OptionalInt cacheTtlHours) {
+        OptionalInt cacheTtlHours,
+        Optional<io.themis.privacy.PrivacyConfig> privacy) {
 
     public ConfigFile {
         analyzers = analyzers.map(Set::copyOf);
@@ -44,7 +45,7 @@ public record ConfigFile(
     /** A file without any setting. */
     public static ConfigFile empty(Path source) {
         return new ConfigFile(source, OptionalInt.empty(), Optional.empty(), Optional.empty(), Map.of(), Set.of(),
-                Map.of(), Set.of(), Optional.empty(), OptionalInt.empty());
+                Map.of(), Set.of(), Optional.empty(), OptionalInt.empty(), Optional.empty());
     }
 
     /**
@@ -58,6 +59,7 @@ public record ConfigFile(
         if (failOn.isPresent()) c = c.withFailOn(failOn.get());
         if (offline.isPresent()) c = c.withOffline(offline.get());
         if (cacheTtlHours.isPresent()) c = c.withCacheTtlHours(cacheTtlHours);
+        if (privacy.isPresent()) c = c.withPrivacy(privacy.get());
 
         if (!licenseSeverities.isEmpty() || !silencedLicenses.isEmpty() || !overrides.isEmpty() || !allowArtifacts.isEmpty()) {
             LicensePolicy p = c.licenses();

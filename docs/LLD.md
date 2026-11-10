@@ -524,3 +524,17 @@ Resolution warnings (missing/invalid transitive POMs, undecryptable passwords) a
 - Uses Gradle's own resolution, repositories and credentials (`~/.gradle/gradle.properties`), so it matches `./gradlew dependencies`.
 - Trust: it executes the project's build scripts.
 - Verified with Gradle 6.9.1 (Spring Boot 2.4, JDK 11), 7.6.1 (Spring Boot 3.0 multi-project, JDK 17) and 8.14 (tests).
+
+## 20. Phase 3 status (vulnerabilities): done
+
+- `VulnerabilityAnalyzer` (`vulns`): one batched `POST /v1/querybatch` to OSV, then `GET /v1/vulns/{id}` per advisory (8 in parallel), both cached 24 h. Withdrawn advisories ignored. Severity: CVSS v3 base score computed from the vector (`Cvss`), else the database rating (GHSA `MODERATE` = MEDIUM), else MEDIUM. Test-scope findings capped at LOW. `fixedIn` per advisory = nearest fixed version above the current one (Maven `ComparableVersion`); per dependency = the version that fixes all of them.
+- OSV unreachable = analyzer error (reported), never a silent "no vulnerabilities".
+- CLI: `themis vulns [DIR]`; `scan` prints a `Vulnerable :` summary.
+
+### Privacy / data-leak guarantees (OSV and deps.dev)
+
+- Only `group:artifact` + version of *public* packages is sent, over HTTPS (plain HTTP only to loopback, for tests); redirects are never followed; the only headers are a fixed Themis client name, `Accept` and `Content-Type`; no cookies or credentials; no paths, project names, hostnames or user data.
+- Never sent (`LookupPrivacy`): the project's own organisation group (first two groupId segments, e.g. `com.acme:*` and `com.acme.*`), `-SNAPSHOT` and timestamped snapshot versions, and `privacy.privateArtifacts` patterns. Applies to deps.dev license lookups as well (this closed a Phase 2 leak of internal coordinates).
+- `.themis.yml`: `privacy: { privateArtifacts: ["io.vendor.internal:*"], projectGroupPrivate: true }`.
+- The cache (`~/.themis/cache`) is owner-only (`rwx------`, files `rw-------`). `--offline` sends nothing.
+- Tests assert on everything a stub server receives (paths, headers, bodies).

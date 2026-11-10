@@ -31,12 +31,12 @@ class LicensesCommandTest {
         repo.publish("com.acme:agpl-lib:1.0", "jar", licenses("GNU Affero General Public License v3"));
         repo.publish("com.acme:mit-lib:1.0", "jar", licenses("The MIT License"));
         repo.publish("com.acme:weak-lib:1.0", "jar", licenses("Eclipse Public License - v 2.0"));
-        repo.publish("com.acme:from-depsdev:1.0", "jar", "");      // no <licenses>: deps.dev knows it
+        repo.publish("org.thirdparty:from-depsdev:1.0", "jar", "");      // no <licenses>: deps.dev knows it
         repo.publish("com.acme:mystery:1.0", "jar", "");           // nobody knows
         repo.publish("com.acme:test-gpl:1.0", "jar", licenses("GPLv3"));
-        depsDev.depsDev("com.acme:from-depsdev:1.0", "Apache-2.0");
+        depsDev.depsDev("org.thirdparty:from-depsdev:1.0", "Apache-2.0");
         app = repo.project(tmp.resolve("app"), "com.acme:app:1.0", deps("com.acme:mit-lib:1.0", "com.acme:agpl-lib:1.0",
-                "com.acme:weak-lib:1.0", "com.acme:from-depsdev:1.0", "com.acme:mystery:1.0", "com.acme:test-gpl:1.0:test"));
+                "com.acme:weak-lib:1.0", "org.thirdparty:from-depsdev:1.0", "com.acme:mystery:1.0", "com.acme:test-gpl:1.0:test"));
         cli = new CliHarness(repo, tmp, depsDev.baseUrl());
     }
 
@@ -50,15 +50,23 @@ class LicensesCommandTest {
         int exit = cli.run("licenses", app.toString());
 
         assertThat(exit).as(cli.err()).isEqualTo(ThemisCli.EXIT_OK);
-        List<String> rows = cli.out().lines().filter(l -> l.startsWith("  com.acme:")).toList();
+        List<String> rows = cli.out().lines().filter(l -> l.startsWith("  com.acme:") || l.startsWith("  org.thirdparty:")).toList();
         assertThat(rows).hasSize(5); // test scope excluded by default
         assertThat(rows.get(0)).containsPattern("com\\.acme:agpl-lib:1\\.0\\s+compile\\s+AGPL-3\\.0-only\\s+NETWORK_COPYLEFT\\s+pom");
         assertThat(rows.get(1)).containsPattern("com\\.acme:mystery:1\\.0\\s+compile\\s+-\\s+UNKNOWN\\s+none");
         assertThat(rows.get(2)).containsPattern("com\\.acme:weak-lib:1\\.0\\s+compile\\s+EPL-2\\.0\\s+WEAK_COPYLEFT\\s+pom");
         assertThat(rows.subList(3, 5)).anySatisfy(r -> assertThat(r)
-                .containsPattern("com\\.acme:from-depsdev:1\\.0\\s+compile\\s+Apache-2\\.0\\s+PERMISSIVE\\s+deps\\.dev"));
+                .containsPattern("org\\.thirdparty:from-depsdev:1\\.0\\s+compile\\s+Apache-2\\.0\\s+PERMISSIVE\\s+deps\\.dev"));
         assertThat(cli.out()).contains("5 dependencies: 1 network copyleft, 0 strong copyleft, 0 proprietary, "
                 + "1 unknown, 1 weak copyleft, 2 permissive");
+    }
+
+    @Test
+    void internalCoordinatesNeverReachPublicApis() {
+        cli.run("scan", app.toString());
+
+        assertThat(depsDev.everythingSent()).contains("from-depsdev").doesNotContain("com.acme").doesNotContain("com%3Aacme")
+                .doesNotContain(tmp.toString());
     }
 
     @Test
@@ -80,7 +88,7 @@ class LicensesCommandTest {
 
         assertThat(cli.run("licenses", app.toString(), "--offline")).isEqualTo(ThemisCli.EXIT_OK);
         assertThat(depsDev.requests()).hasSize(before);
-        assertThat(cli.out()).containsPattern("com\\.acme:from-depsdev:1\\.0\\s+compile\\s+-\\s+UNKNOWN");
+        assertThat(cli.out()).containsPattern("org\\.thirdparty:from-depsdev:1\\.0\\s+compile\\s+-\\s+UNKNOWN");
     }
 
     @Test

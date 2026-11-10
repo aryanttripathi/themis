@@ -53,9 +53,18 @@ public final class LicenseLookup {
      * @param offline   no deps.dev requests; cached answers are still used
      * @param ttl       maximum age of cached deps.dev answers
      */
-    public record Settings(Map<String, String> overrides, boolean offline, Duration ttl) {
+    /**
+     * @param mayQuery coordinates allowed to leave the machine (privacy: internal packages and
+     *                 snapshots are never sent to deps.dev)
+     */
+    public record Settings(Map<String, String> overrides, boolean offline, Duration ttl,
+                           java.util.function.Predicate<Coordinate> mayQuery) {
         public Settings {
             overrides = Map.copyOf(overrides);
+        }
+
+        public Settings(Map<String, String> overrides, boolean offline, Duration ttl) {
+            this(overrides, offline, ttl, c -> true);
         }
     }
 
@@ -180,6 +189,10 @@ public final class LicenseLookup {
 
     private void depsDev(State s, Settings settings) {
         Coordinate c = s.coordinate();
+        if (!settings.mayQuery().test(c)) {
+            s.notes.add("not looked up on deps.dev: private coordinate");
+            return;
+        }
         String key = c.ga() + ":" + c.version();
         Optional<List<String>> answer = cache.get(CACHE_NAMESPACE, key, settings.ttl(), STRINGS);
         if (answer.isEmpty() && !settings.offline()) {

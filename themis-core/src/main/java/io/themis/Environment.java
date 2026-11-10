@@ -24,13 +24,19 @@ import java.util.Objects;
  * @param cacheDir       root of the network-answer cache ({@code ~/.themis/cache})
  * @param depsDevBaseUrl deps.dev API base URL
  */
-public record Environment(ResolverOptions resolver, Path cacheDir, URI depsDevBaseUrl, GradleOptions gradle) {
+public record Environment(ResolverOptions resolver, Path cacheDir, URI depsDevBaseUrl, GradleOptions gradle, URI osvBaseUrl) {
 
     public Environment {
         Objects.requireNonNull(resolver, "resolver");
         Objects.requireNonNull(cacheDir, "cacheDir");
         Objects.requireNonNull(depsDevBaseUrl, "depsDevBaseUrl");
         Objects.requireNonNull(gradle, "gradle");
+        Objects.requireNonNull(osvBaseUrl, "osvBaseUrl");
+    }
+
+    /** Production OSV endpoint. */
+    public Environment(ResolverOptions resolver, Path cacheDir, URI depsDevBaseUrl, GradleOptions gradle) {
+        this(resolver, cacheDir, depsDevBaseUrl, gradle, io.themis.vuln.OsvClient.DEFAULT_BASE_URL);
     }
 
     /** Default Gradle options (project wrapper, the user's GRADLE_USER_HOME). */
@@ -49,6 +55,6 @@ public record Environment(ResolverOptions resolver, Path cacheDir, URI depsDevBa
     }
 
     public Environment withResolver(ResolverOptions options) {
-        return new Environment(options, cacheDir, depsDevBaseUrl, gradle);
+        return new Environment(options, cacheDir, depsDevBaseUrl, gradle, osvBaseUrl);
     }
 }

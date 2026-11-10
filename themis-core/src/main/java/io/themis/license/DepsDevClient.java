@@ -123,7 +123,7 @@ public final class DepsDevClient {
         }
     }
 
-    static ProxySelector proxySelector() {
+    public static ProxySelector proxySelector() {
         if (System.getProperty("https.proxyHost") != null) return ProxySelector.getDefault();
         String env = Optional.ofNullable(System.getenv("HTTPS_PROXY")).orElse(System.getenv("https_proxy"));
         if (env == null || env.isBlank()) return ProxySelector.getDefault();

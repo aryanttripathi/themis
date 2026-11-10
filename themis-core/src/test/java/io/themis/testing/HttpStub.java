@@ -29,6 +29,8 @@ public final class HttpStub implements AutoCloseable {
     private final Map<String, Deque<Response>> responses = new ConcurrentHashMap<>();
     private final List<String> requests = new CopyOnWriteArrayList<>();
     private final List<String> userAgents = new CopyOnWriteArrayList<>();
+    private final List<String> bodies = new CopyOnWriteArrayList<>();
+    private final List<String> headers = new CopyOnWriteArrayList<>();
 
     private HttpStub(HttpServer server) {
         this.server = server;
@@ -42,6 +44,8 @@ public final class HttpStub implements AutoCloseable {
                 String path = exchange.getRequestURI().getRawPath();
                 stub.requests.add(path);
                 stub.userAgents.add(String.valueOf(exchange.getRequestHeaders().getFirst("User-Agent")));
+                stub.headers.add(exchange.getRequestHeaders().entrySet().toString());
+                stub.bodies.add(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
                 Deque<Response> queue = stub.responses.get(path);
                 Response r = queue == null || queue.isEmpty() ? new Response(404, "{}")
                         : (queue.size() > 1 ? queue.pollFirst() : queue.peekFirst());
@@ -87,6 +91,21 @@ public final class HttpStub implements AutoCloseable {
 
     public List<String> requests() {
         return List.copyOf(requests);
+    }
+
+    /** Request bodies, in arrival order (POST payloads; empty for GET). */
+    public List<String> bodies() {
+        return List.copyOf(bodies);
+    }
+
+    /** Every request's headers, rendered as text, for leak assertions. */
+    public List<String> headers() {
+        return List.copyOf(headers);
+    }
+
+    /** Everything clients sent us: paths, headers and bodies. */
+    public String everythingSent() {
+        return String.join("\n", requests) + "\n" + String.join("\n", headers) + "\n" + String.join("\n", bodies);
     }
 
     public List<String> userAgents() {

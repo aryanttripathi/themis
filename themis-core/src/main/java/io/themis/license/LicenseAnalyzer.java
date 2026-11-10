@@ -63,7 +63,8 @@ public final class LicenseAnalyzer implements Analyzer {
                 ? Duration.ofHours(config.cacheTtlHours().getAsInt()) : LicenseLookup.DEFAULT_TTL;
         List<Dependency> deps = ctx.graph().dependencies();
         List<LicenseInfo> infos = lookup.lookupAll(deps, ctx.metadata(),
-                new LicenseLookup.Settings(policy.overrides(), config.offline(), ttl));
+                new LicenseLookup.Settings(policy.overrides(), config.offline(), ttl,
+                        io.themis.privacy.LookupPrivacy.of(config.privacy(), ctx.project().coordinate())::isPublic));
 
         List<Finding> findings = new ArrayList<>();
         for (int i = 0; i < deps.size(); i++) {

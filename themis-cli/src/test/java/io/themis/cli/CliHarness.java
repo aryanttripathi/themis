@@ -24,7 +24,9 @@ final class CliHarness {
     final Environment environment;
 
     CliHarness(FixtureRepo repo, Path tmp, URI depsDev) {
-        this.environment = new Environment(repo.options(), tmp.resolve("themis-cache"), depsDev);
+        // deps.dev and OSV share the stub (or the discard port): tests never reach a public API
+        this.environment = new Environment(repo.options(), tmp.resolve("themis-cache"), depsDev,
+                io.themis.resolve.gradle.GradleOptions.defaults(), depsDev);
     }
 
     CliHarness(FixtureRepo repo, Path tmp) {

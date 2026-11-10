@@ -100,6 +100,9 @@ final class ScanCommand implements Callable<Integer> {
         if (!r.dataOf(LicenseInfo.class).isEmpty()) {
             out.println("Licenses     : " + LicensesCommand.summary(r.dataOf(LicenseInfo.class)));
         }
+        if (!r.dataOf(io.themis.vuln.DependencyVulnerabilities.class).isEmpty()) {
+            out.println("Vulnerable   : " + VulnsCommand.summary(r.dataOf(io.themis.vuln.DependencyVulnerabilities.class)));
+        }
         Map<Severity, Long> counts = r.countBySeverity();
         out.printf(Locale.ROOT, "Findings     : %d critical, %d high, %d medium, %d low, %d info%n",
                 counts.get(Severity.CRITICAL), counts.get(Severity.HIGH), counts.get(Severity.MEDIUM),
