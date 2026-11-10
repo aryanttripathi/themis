@@ -11,6 +11,7 @@
 
     <name>themis</name>
     <description>Scans Java projects for dependency licenses, vulnerabilities, Java-version compatibility, and leaked secrets/PII.</description>
+    <url>https://github.com/aryanttripathi/themis</url>
 
     <licenses>
         <license>
@@ -18,6 +19,26 @@
             <url>https://www.apache.org/licenses/LICENSE-2.0</url>
         </license>
     </licenses>
+
+    <developers>
+        <developer>
+            <id>aryanttripathi</id>
+            <name>Aryant Tripathi</name>
+            <url>https://github.com/aryanttripathi</url>
+        </developer>
+    </developers>
+
+    <scm>
+        <connection>scm:git:https://github.com/aryanttripathi/themis.git</connection>
+        <developerConnection>scm:git:ssh://git@github.com/aryanttripathi/themis.git</developerConnection>
+        <url>https://github.com/aryanttripathi/themis</url>
+        <tag>HEAD</tag>
+    </scm>
+
+    <issueManagement>
+        <system>GitHub</system>
+        <url>https://github.com/aryanttripathi/themis/issues</url>
+    </issueManagement>
 
     <modules>
         <module>themis-core</module>
@@ -183,6 +204,66 @@
             <properties>
                 <surefire.excludedGroups/>
             </properties>
+        </profile>
+
+        <!-- mvn -Prelease clean deploy: sources, javadoc and GPG signatures, uploaded to the Maven Central Portal.
+             Needs a "central" server (Portal user token) in ~/.m2/settings.xml and a GPG key (MAVEN_GPG_PASSPHRASE). -->
+        <profile>
+            <id>release</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-source-plugin</artifactId>
+                        <version>3.3.1</version>
+                        <executions>
+                            <execution>
+                                <id>attach-sources</id>
+                                <goals><goal>jar-no-fork</goal></goals>
+                            </execution>
+                        </executions>
+                    </plugin>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-javadoc-plugin</artifactId>
+                        <version>3.12.0</version>
+                        <configuration>
+                            <doclint>all,-missing</doclint>
+                            <quiet>true</quiet>
+                        </configuration>
+                        <executions>
+                            <execution>
+                                <id>attach-javadocs</id>
+                                <goals><goal>jar</goal></goals>
+                            </execution>
+                        </executions>
+                    </plugin>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-gpg-plugin</artifactId>
+                        <version>3.2.8</version>
+                        <executions>
+                            <execution>
+                                <id>sign-artifacts</id>
+                                <phase>verify</phase>
+                                <goals><goal>sign</goal></goals>
+                            </execution>
+                        </executions>
+                    </plugin>
+                    <plugin>
+                        <groupId>org.sonatype.central</groupId>
+                        <artifactId>central-publishing-maven-plugin</artifactId>
+                        <version>0.12.0</version>
+                        <extensions>true</extensions>
+                        <configuration>
+                            <publishingServerId>central</publishingServerId>
+                            <!-- Upload and validate only; press "Publish" in the Portal to release. -->
+                            <autoPublish>false</autoPublish>
+                            <waitUntil>validated</waitUntil>
+                        </configuration>
+                    </plugin>
+                </plugins>
+            </build>
         </profile>
     </profiles>
 </project>
