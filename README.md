@@ -1,6 +1,7 @@
 # Themis
 
 [![CI](https://github.com/aryanttripathi/themis/actions/workflows/ci.yml/badge.svg)](https://github.com/aryanttripathi/themis/actions/workflows/ci.yml)
+[![Maven Central](https://img.shields.io/maven-central/v/io.github.aryanttripathi/themis-core)](https://central.sonatype.com/artifact/io.github.aryanttripathi/themis-core)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 
 > Named after the Greek goddess of law and justice: Themis weighs your dependencies and code against the rules.
@@ -17,7 +18,29 @@ Only public package coordinates leave your machine; source code never does.
 
 > Status: v0.1. Maven and Gradle resolution, licenses, OSV vulnerabilities, runtime-aware upgrade advice, Java version per jar, secrets, PII, suppressions/baseline, console/HTML/JSON/SARIF reports.
 
-## Build
+## Install
+
+**CLI**: download `themis.jar` from the [latest release](https://github.com/aryanttripathi/themis/releases/latest) and run it with Java 17+:
+
+```bash
+java -jar themis.jar scan .
+```
+
+**Library** (Maven Central):
+
+```xml
+<dependency>
+    <groupId>io.github.aryanttripathi</groupId>
+    <artifactId>themis-core</artifactId>
+    <version>0.1.0</version>
+</dependency>
+```
+
+```kotlin
+implementation("io.github.aryanttripathi:themis-core:0.1.0")
+```
+
+## Build from source
 
 Requires JDK 17+ and Maven 3.9+.
 
@@ -31,7 +54,7 @@ Gradle integration tests run only when a Gradle installation is found (or `THEMI
 ## Quick start
 
 ```bash
-alias themis='java -jar /path/to/themis/themis-cli/target/themis.jar'
+alias themis='java -jar /path/to/themis.jar'
 
 cd my-java-project
 themis scan .
