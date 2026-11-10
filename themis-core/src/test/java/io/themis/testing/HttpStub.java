@@ -27,6 +27,7 @@ public final class HttpStub implements AutoCloseable {
 
     private final HttpServer server;
     private final Map<String, Deque<Response>> responses = new ConcurrentHashMap<>();
+    private final Map<String, byte[]> binaries = new ConcurrentHashMap<>();
     private final List<String> requests = new CopyOnWriteArrayList<>();
     private final List<String> userAgents = new CopyOnWriteArrayList<>();
     private final List<String> bodies = new CopyOnWriteArrayList<>();
@@ -46,6 +47,15 @@ public final class HttpStub implements AutoCloseable {
                 stub.userAgents.add(String.valueOf(exchange.getRequestHeaders().getFirst("User-Agent")));
                 stub.headers.add(exchange.getRequestHeaders().entrySet().toString());
                 stub.bodies.add(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
+                byte[] binary = stub.binaries.get(path);
+                if (binary != null) {
+                    exchange.getResponseHeaders().add("Content-Type", "application/java-archive");
+                    exchange.sendResponseHeaders(200, binary.length);
+                    try (OutputStream os = exchange.getResponseBody()) {
+                        os.write(binary);
+                    }
+                    return;
+                }
                 Deque<Response> queue = stub.responses.get(path);
                 Response r = queue == null || queue.isEmpty() ? new Response(404, "{}")
                         : (queue.size() > 1 ? queue.pollFirst() : queue.peekFirst());
@@ -71,6 +81,12 @@ public final class HttpStub implements AutoCloseable {
     /** Responds to {@code path} with these responses in order; the last one repeats. */
     public HttpStub on(String path, Response... rs) {
         responses.put(path, new ArrayDeque<>(List.of(rs)));
+        return this;
+    }
+
+    /** Serves these bytes (e.g. a jar) at {@code path}. */
+    public HttpStub onBytes(String path, byte[] body) {
+        binaries.put(path, body.clone());
         return this;
     }
 

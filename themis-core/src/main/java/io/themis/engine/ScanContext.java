@@ -50,6 +50,11 @@ public final class ScanContext {
         return data.stream().filter(type::isInstance).map(type::cast).toList();
     }
 
+    /** Seeds earlier-stage results, for testing ADVISOR analyzers in isolation. */
+    public void publishForTest(List<Object> items) {
+        publish(items);
+    }
+
     void publish(List<Object> items) {
         data.addAll(items);
     }

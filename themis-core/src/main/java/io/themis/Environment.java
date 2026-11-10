@@ -24,7 +24,8 @@ import java.util.Objects;
  * @param cacheDir       root of the network-answer cache ({@code ~/.themis/cache})
  * @param depsDevBaseUrl deps.dev API base URL
  */
-public record Environment(ResolverOptions resolver, Path cacheDir, URI depsDevBaseUrl, GradleOptions gradle, URI osvBaseUrl) {
+public record Environment(ResolverOptions resolver, Path cacheDir, URI depsDevBaseUrl, GradleOptions gradle, URI osvBaseUrl,
+                          URI mavenCentralUrl) {
 
     public Environment {
         Objects.requireNonNull(resolver, "resolver");
@@ -32,6 +33,12 @@ public record Environment(ResolverOptions resolver, Path cacheDir, URI depsDevBa
         Objects.requireNonNull(depsDevBaseUrl, "depsDevBaseUrl");
         Objects.requireNonNull(gradle, "gradle");
         Objects.requireNonNull(osvBaseUrl, "osvBaseUrl");
+        Objects.requireNonNull(mavenCentralUrl, "mavenCentralUrl");
+    }
+
+    /** Production Maven Central (used to read candidate upgrade jars' bytecode). */
+    public Environment(ResolverOptions resolver, Path cacheDir, URI depsDevBaseUrl, GradleOptions gradle, URI osvBaseUrl) {
+        this(resolver, cacheDir, depsDevBaseUrl, gradle, osvBaseUrl, io.themis.upgrade.JarFetcher.MAVEN_CENTRAL);
     }
 
     /** Production OSV endpoint. */
@@ -55,6 +62,6 @@ public record Environment(ResolverOptions resolver, Path cacheDir, URI depsDevBa
     }
 
     public Environment withResolver(ResolverOptions options) {
-        return new Environment(options, cacheDir, depsDevBaseUrl, gradle, osvBaseUrl);
+        return new Environment(options, cacheDir, depsDevBaseUrl, gradle, osvBaseUrl, mavenCentralUrl);
     }
 }

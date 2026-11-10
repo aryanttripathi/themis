@@ -48,6 +48,15 @@ final class VulnsCommand implements Callable<Integer> {
     @Option(names = "--config", description = "Config file (default: DIR/.themis.yml).")
     Path config;
 
+    @Option(names = "--console-limit", description = "Above this many rows, print a summary and write an HTML report instead.")
+    Integer consoleLimit;
+
+    @Option(names = "--no-open", description = "Do not open the HTML report in a browser.")
+    boolean noOpen;
+
+    @Option(names = "--output", defaultValue = "themis-report", description = "Directory for the HTML report (default: ${DEFAULT-VALUE}).")
+    Path outputDir;
+
     @Mixin
     ResolverMixin resolver;
 
@@ -56,10 +65,28 @@ final class VulnsCommand implements Callable<Integer> {
         ScanConfig cfg = CliConfig.build(projectDir, config, null, null, null, offline, includeTest).withLenient(lenient);
         ScanReport report = Themis.vulnerabilities(projectDir, cfg,
                 parent.environment().withResolver(resolver.apply(parent.environment().resolver())));
-        print(report, spec.commandLine().getOut());
+        ReportOutput.Settings rs = ReportOutput.settings(projectDir, config, consoleLimit, noOpen);
+        int rows = report.dataOf(io.themis.vuln.DependencyVulnerabilities.class).stream().mapToInt(v -> v.advisories().size()).sum();
+        if (rows > rs.consoleLimit()) {
+            PrintWriter out = spec.commandLine().getOut();
+            out.println(report.project().coordinate());
+            out.println(summaryLine(report));
+            ReportOutput.tooMany(out, rows, "advisories", rs.consoleLimit());
+            try {
+                ReportOutput.writeHtml(report, outputDir, rs.open(), out);
+            } catch (java.io.IOException e) {
+                throw new java.io.UncheckedIOException(e);
+            }
+        } else {
+            print(report, spec.commandLine().getOut());
+        }
         DepsCommand.printWarnings(report.graph(), spec.commandLine().getErr());
         report.errors().forEach(e -> spec.commandLine().getErr().println("error: analyzer '" + e.analyzer() + "' failed: " + e.message()));
         return report.errors().isEmpty() ? ThemisCli.EXIT_OK : ThemisCli.EXIT_ERROR;
+    }
+
+    private static String summaryLine(ScanReport report) {
+        return summary(report.dataOf(DependencyVulnerabilities.class));
     }
 
     static void print(ScanReport report, PrintWriter out) {

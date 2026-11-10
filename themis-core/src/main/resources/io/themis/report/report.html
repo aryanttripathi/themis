@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src data:; connect-src 'none'; form-action 'none'; base-uri 'none'">
+<meta name="referrer" content="no-referrer">
+<title>Themis report</title>
+<style>
+  :root {
+    --bg: #f6f7f9; --panel: #ffffff; --text: #1d2330; --muted: #667085; --line: #e4e7ec; --accent: #4b48d6;
+    --crit: #b42318; --crit-bg: #fee4e2; --high: #c4320a; --high-bg: #ffead5; --med: #b54708; --med-bg: #fef0c7;
+    --low: #175cd3; --low-bg: #d1e9ff; --info: #475467; --info-bg: #eaecf0; --ok: #067647; --ok-bg: #dcfae6;
+    --row-hover: #f2f4f7; --shadow: 0 1px 2px rgba(16, 24, 40, .06), 0 1px 3px rgba(16, 24, 40, .08);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0f1218; --panel: #171b24; --text: #e6e8ee; --muted: #98a2b3; --line: #2a303c; --accent: #8b8af7;
+      --crit: #fda29b; --crit-bg: #55160c; --high: #fdb022; --high-bg: #4e1d09; --med: #fec84b; --med-bg: #4e3a0a;
+      --low: #84caff; --low-bg: #102a56; --info: #cfd4dc; --info-bg: #2a303c; --ok: #75e0a7; --ok-bg: #053321;
+      --row-hover: #1e2430; --shadow: none;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+    font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; }
+  header { background: var(--panel); border-bottom: 1px solid var(--line); padding: 20px 32px; }
+  header h1 { margin: 0; font-size: 20px; font-weight: 650; letter-spacing: -.01em; }
+  header h1 .brand { color: var(--accent); }
+  header .meta { color: var(--muted); margin-top: 4px; font-size: 13px; }
+  main { padding: 24px 32px 48px; max-width: 1500px; margin: 0 auto; }
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; margin-bottom: 20px; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; box-shadow: var(--shadow); }
+  .card .label { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .04em; }
+  .card .value { font-size: 26px; font-weight: 650; margin-top: 2px; font-variant-numeric: tabular-nums; }
+  .card .sub { color: var(--muted); font-size: 12px; }
+  .card.crit .value { color: var(--crit); } .card.high .value { color: var(--high); }
+  .card.med .value { color: var(--med); } .card.ok .value { color: var(--ok); }
+  .bar { display: flex; height: 6px; border-radius: 3px; overflow: hidden; margin-top: 8px; background: var(--info-bg); }
+  .bar span { display: block; height: 100%; }
+  nav.tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); margin-bottom: 14px; flex-wrap: wrap; }
+  nav.tabs button { background: none; border: 0; border-bottom: 2px solid transparent; padding: 10px 14px; font: inherit;
+    color: var(--muted); cursor: pointer; font-weight: 550; }
+  nav.tabs button.active { color: var(--accent); border-bottom-color: var(--accent); }
+  nav.tabs .count { background: var(--info-bg); color: var(--info); border-radius: 10px; padding: 0 7px; margin-left: 6px; font-size: 12px; }
+  .toolbar { display: flex; gap: 10px; align-items: center; margin-bottom: 12px; flex-wrap: wrap; }
+  .toolbar input[type=search] { flex: 1; min-width: 240px; max-width: 460px; padding: 8px 12px; border-radius: 8px;
+    border: 1px solid var(--line); background: var(--panel); color: var(--text); font: inherit; }
+  .chip { border: 1px solid var(--line); background: var(--panel); color: var(--text); border-radius: 16px; padding: 4px 12px;
+    font: inherit; font-size: 12px; cursor: pointer; }
+  .chip.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .toolbar .shown { color: var(--muted); font-size: 12px; margin-left: auto; }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; overflow: auto; box-shadow: var(--shadow); }
+  table { width: 100%; border-collapse: collapse; }
+  th { position: sticky; top: 0; background: var(--panel); text-align: left; font-size: 12px; color: var(--muted);
+    text-transform: uppercase; letter-spacing: .04em; font-weight: 600; padding: 10px 14px; border-bottom: 1px solid var(--line);
+    cursor: pointer; user-select: none; white-space: nowrap; }
+  th.sorted::after { content: " \2193"; } th.sorted.asc::after { content: " \2191"; }
+  td { padding: 9px 14px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  tr.row { cursor: pointer; } tr.row:hover td { background: var(--row-hover); }
+  tr.detail td { background: var(--bg); padding: 14px 18px; }
+  td a, .nowrap { white-space: nowrap; }
+  .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12.5px; }
+  .muted { color: var(--muted); }
+  .pill { display: inline-block; border-radius: 10px; padding: 1px 9px; font-size: 11.5px; font-weight: 650; letter-spacing: .02em; white-space: nowrap; }
+  .CRITICAL { color: var(--crit); background: var(--crit-bg); } .HIGH { color: var(--high); background: var(--high-bg); }
+  .MEDIUM { color: var(--med); background: var(--med-bg); } .LOW { color: var(--low); background: var(--low-bg); }
+  .INFO { color: var(--info); background: var(--info-bg); } .OK { color: var(--ok); background: var(--ok-bg); }
+  .NETWORK_COPYLEFT { color: var(--crit); background: var(--crit-bg); } .STRONG_COPYLEFT { color: var(--high); background: var(--high-bg); }
+  .PROPRIETARY, .UNKNOWN { color: var(--med); background: var(--med-bg); } .WEAK_COPYLEFT { color: var(--low); background: var(--low-bg); }
+  .PERMISSIVE { color: var(--ok); background: var(--ok-bg); }
+  dl.kv { display: grid; grid-template-columns: max-content 1fr; gap: 6px 18px; margin: 0; }
+  dl.kv dt { color: var(--muted); } dl.kv dd { margin: 0; word-break: break-word; }
+  a { color: var(--accent); }
+  .empty { padding: 40px; text-align: center; color: var(--muted); }
+  ul.plain { margin: 0; padding-left: 18px; }
+  footer { color: var(--muted); font-size: 12px; text-align: center; padding: 16px; }
+</style>
+</head>
+<body>
+<header>
+  <h1><span class="brand">Themis</span> report &middot; <span id="project"></span></h1>
+  <div class="meta" id="meta"></div>
+</header>
+<main>
+  <section class="cards" id="cards"></section>
+  <nav class="tabs" id="tabs">
+    <button data-tab="findings">Findings</button>
+    <button data-tab="vulnerabilities">Vulnerabilities</button>
+    <button data-tab="upgrades">Upgrades</button>
+    <button data-tab="licenses">Licenses</button>
+    <button data-tab="dependencies">Dependencies</button>
+    <button data-tab="warnings">Warnings</button>
+  </nav>
+  <div class="toolbar">
+    <input type="search" id="search" placeholder="Filter rows (coordinate, CVE, license...)" autocomplete="off">
+    <span id="chips"></span>
+    <span class="shown" id="shown"></span>
+  </div>
+  <div class="panel" id="panel"></div>
+</main>
+<footer>Generated locally by Themis. This file loads nothing from the network.</footer>
+<script type="application/json" id="themis-data">/*THEMIS_DATA*/</script>
+<script>
+(function () {
+  "use strict";
+  var data = JSON.parse(document.getElementById("themis-data").textContent);
+  var SEV = ["CRITICAL", "HIGH", "MEDIUM", "LOW", "INFO"];
+  var CAT = ["NETWORK_COPYLEFT", "STRONG_COPYLEFT", "PROPRIETARY", "UNKNOWN", "WEAK_COPYLEFT", "PERMISSIVE"];
+
+  // DOM helper: every piece of text goes through createTextNode, never parsed as HTML.
+  function el(tag, attrs) {
+    var node = document.createElement(tag);
+    if (attrs) Object.keys(attrs).forEach(function (k) {
+      if (k === "class") node.className = attrs[k]; else node.setAttribute(k, attrs[k]);
+    });
+    for (var i = 2; i < arguments.length; i++) {
+      var c = arguments[i];
+      if (c === null || c === undefined || c === false) continue;
+      node.appendChild(typeof c === "object" ? c : document.createTextNode(String(c)));
+    }
+    return node;
+  }
+  function pill(text, cls) { return el("span", {"class": "pill " + (cls || text)}, label(text)); }
+  function label(s) { return String(s).replace(/_/g, " ").toLowerCase().replace(/^./, function (c) { return c.toUpperCase(); }); }
+  function link(url, text) {
+    if (typeof url !== "string" || url.indexOf("https://") !== 0) return document.createTextNode(text || url || "");
+    var a = el("a", {href: url, target: "_blank", rel: "noopener noreferrer"}, text || url);
+    return a;
+  }
+  function kv(pairs) {
+    var dl = el("dl", {"class": "kv"});
+    pairs.forEach(function (p) { if (p[1] !== undefined && p[1] !== null && p[1] !== "") { dl.appendChild(el("dt", null, p[0])); dl.appendChild(el("dd", null, p[1])); } });
+    return dl;
+  }
+  function list(items) { var ul = el("ul", {"class": "plain"}); items.forEach(function (i) { ul.appendChild(el("li", null, i)); }); return ul; }
+  function sevRank(s) { var i = SEV.indexOf(s); return i < 0 ? 9 : i; }
+
+  // ---- header & cards
+  document.getElementById("project").textContent = data.project.coordinate;
+  document.getElementById("meta").textContent = "Java " + data.project.javaRelease + " · " + data.summary.dependencies +
+    " dependencies (" + data.summary.direct + " direct) · generated " + new Date(data.generatedAt).toLocaleString() + " · Themis " + data.tool;
+  var s = data.summary, cards = document.getElementById("cards");
+  function card(cls, lbl, value, sub, bar) {
+    var c = el("div", {"class": "card " + cls}, el("div", {"class": "label"}, lbl), el("div", {"class": "value"}, value), sub ? el("div", {"class": "sub"}, sub) : null);
+    if (bar) c.appendChild(bar);
+    cards.appendChild(c);
+  }
+  card("crit", "Critical", s.bySeverity.CRITICAL || 0, "findings");
+  card("high", "High", s.bySeverity.HIGH || 0, "findings");
+  card("med", "Medium", s.bySeverity.MEDIUM || 0, (s.bySeverity.LOW || 0) + " low · " + (s.bySeverity.INFO || 0) + " info");
+  card(s.vulnerableDependencies ? "high" : "ok", "Vulnerable deps", s.vulnerableDependencies, s.advisories + " advisories" +
+    (s.notChecked ? " · " + s.notChecked + " private, not sent" : ""));
+  card("ok", "Upgrades", s.upgrades, "safe upgrades found");
+  var licBar = el("div", {"class": "bar"});
+  var colors = {NETWORK_COPYLEFT: "var(--crit)", STRONG_COPYLEFT: "var(--high)", PROPRIETARY: "var(--med)", UNKNOWN: "var(--med)", WEAK_COPYLEFT: "var(--low)", PERMISSIVE: "var(--ok)"};
+  var licTotal = CAT.reduce(function (n, c) { return n + (s.licenses[c] || 0); }, 0);
+  CAT.forEach(function (c) { if (s.licenses[c]) { var seg = el("span", {title: label(c) + ": " + s.licenses[c]}); seg.style.width = (100 * s.licenses[c] / licTotal) + "%"; seg.style.background = colors[c]; licBar.appendChild(seg); } });
+  card("", "Licenses", licTotal, (s.licenses.NETWORK_COPYLEFT || 0) + " network · " + (s.licenses.STRONG_COPYLEFT || 0) + " strong copyleft · " + (s.licenses.UNKNOWN || 0) + " unknown", licTotal ? licBar : null);
+
+  // ---- table views
+  var views = {
+    findings: {
+      rows: data.findings, sev: function (r) { return r.severity; },
+      cols: [["Severity", function (r) { return pill(r.severity); }, function (r) { return sevRank(r.severity); }],
+             ["Type", function (r) { return label(r.type); }, function (r) { return r.type; }],
+             ["Finding", function (r) { return r.title; }, function (r) { return r.title; }]],
+      text: function (r) { return [r.title, r.type, r.detail, r.dependency].join(" "); },
+      detail: function (r) {
+        var ev = Object.keys(r.evidence || {}).map(function (k) { return [k, k === "url" ? link(r.evidence[k]) : r.evidence[k]]; });
+        return el("div", null, r.detail ? el("p", null, r.detail) : null, kv([["Dependency", r.dependency], ["Id", el("span", {"class": "mono"}, r.id)]].concat(ev)));
+      }
+    },
+    vulnerabilities: {
+      rows: flatAdvisories(), sev: function (r) { return r.severity; },
+      cols: [["Severity", function (r) { return pill(r.severity); }, function (r) { return sevRank(r.severity); }],
+             ["Dependency", function (r) { return el("span", {"class": "mono"}, r.dependency); }, function (r) { return r.dependency; }],
+             ["Advisory", function (r) { return el("span", null, link(r.url, r.id), r.cve ? el("div", {"class": "muted mono"}, r.cve) : null); }, function (r) { return r.id; }],
+             ["CVSS", function (r) { return r.cvss === null || r.cvss === undefined ? "" : r.cvss.toFixed(1); }, function (r) { return -(r.cvss || 0); }],
+             ["Summary", function (r) { return r.summary; }, function (r) { return r.summary; }],
+             ["Fixed in", function (r) { return r.fixedIn || el("span", {"class": "muted"}, "no fix yet"); }, function (r) { return r.fixedIn || "~"; }]],
+      text: function (r) { return [r.dependency, r.id, r.cve, (r.aliases || []).join(" "), r.summary, r.scope].join(" "); },
+      detail: function (r) {
+        return kv([["Advisory", link(r.url, r.id)], ["Aliases", (r.aliases || []).join(", ")], ["Scope", r.scope + (r.direct ? ", direct" : ", transitive")],
+                   ["Fixed in", r.fixedIn], ["All fixed versions", (r.fixedVersions || []).join(", ")], ["Upgrade dependency to", r.dependencyFixedIn]]);
+      }
+    },
+    upgrades: {
+      rows: data.upgrades, sev: null,
+      cols: [["Dependency", function (r) { return el("span", {"class": "mono"}, r.dependency); }, function (r) { return r.dependency; }],
+             ["Upgrade to", function (r) { return r.recommended ? el("span", {"class": "mono"}, r.recommended) : pill("none", "MEDIUM"); }, function (r) { return r.recommended || "~"; }],
+             ["Fixes", function (r) { return r.fixes; }, function (r) { return -r.fixes; }],
+             ["Java", function (r) { return r.requiredJava ? r.requiredJava + "+" : ""; }, function (r) { return r.requiredJava || 0; }],
+             ["Notes", function (r) { return [r.sameMajor || !r.recommended ? "" : "major version change", r.viaDirect ? "via " + r.viaDirect : "", r.note].filter(Boolean).join(" · "); }, function (r) { return r.note || ""; }]],
+      text: function (r) { return [r.dependency, r.recommended, r.viaDirect, r.note].join(" "); },
+      detail: function (r) {
+        return kv([["Current", r.dependency], ["Recommended", r.recommended], ["Runs on", r.requiredJava ? "Java " + r.requiredJava + "+" : ""],
+                   ["Pulled in by", r.viaDirect], ["How", r.viaDirect ? "Upgrade " + r.viaDirect + ", or pin the version (Maven <dependencyManagement> / Gradle constraints)" : "Change the version in your build file"],
+                   ["Note", r.note]]);
+      }
+    },
+    licenses: {
+      rows: data.licenses, sev: null, cat: true,
+      cols: [["Category", function (r) { return pill(r.category); }, function (r) { return CAT.indexOf(r.category); }],
+             ["Dependency", function (r) { return el("span", {"class": "mono"}, r.dependency); }, function (r) { return r.dependency; }],
+             ["Scope", function (r) { return r.scope; }, function (r) { return r.scope; }],
+             ["License (SPDX)", function (r) { return r.spdx || el("span", {"class": "muted"}, "not recognised"); }, function (r) { return r.spdx || "~"; }],
+             ["Source", function (r) { return r.source; }, function (r) { return r.source; }]],
+      text: function (r) { return [r.dependency, r.spdx, r.category, r.source, (r.declared || []).join(" ")].join(" "); },
+      detail: function (r) { return kv([["Declared as", (r.declared || []).length ? list(r.declared) : ""], ["Notes", (r.notes || []).length ? list(r.notes) : ""]]); }
+    },
+    dependencies: {
+      rows: data.dependencies, sev: null,
+      cols: [["Dependency", function (r) { return el("span", {"class": "mono"}, r.coordinate); }, function (r) { return r.coordinate; }],
+             ["Scope", function (r) { return r.scope; }, function (r) { return r.scope; }],
+             ["Direct", function (r) { return r.direct ? "direct" : "transitive"; }, function (r) { return r.direct ? 0 : 1; }],
+             ["License", function (r) { return r.category ? pill(r.category) : ""; }, function (r) { return CAT.indexOf(r.category); }],
+             ["Advisories", function (r) { return r.advisories ? pill(String(r.advisories), r.worst) : ""; }, function (r) { return -(r.advisories || 0); }],
+             ["Java", function (r) { return r.requiredJava ? r.requiredJava + "+" : ""; }, function (r) { return r.requiredJava || 0; }]],
+      text: function (r) { return [r.coordinate, r.scope, r.spdx, (r.path || []).join(" "), (r.modules || []).join(" ")].join(" "); },
+      detail: function (r) {
+        return kv([["Pulled in via", (r.path || []).length > 2 ? list(r.path) : (r.direct ? "declared directly" : "")], ["Modules", (r.modules || []).join(", ")],
+                   ["License", r.spdx], ["Jar", r.jar ? el("span", {"class": "mono"}, r.jar) : ""]]);
+      }
+    },
+    warnings: {
+      rows: data.warnings.map(function (w) { return {text: w, kind: "warning"}; }).concat(data.errors.map(function (e) { return {text: e.analyzer + ": " + e.message, kind: "error"}; })),
+      sev: null,
+      cols: [["Kind", function (r) { return pill(r.kind, r.kind === "error" ? "CRITICAL" : "MEDIUM"); }, function (r) { return r.kind; }],
+             ["Message", function (r) { return r.text; }, function (r) { return r.text; }]],
+      text: function (r) { return r.text; }, detail: null
+    }
+  };
+
+  function flatAdvisories() {
+    var out = [];
+    data.vulnerabilities.forEach(function (v) {
+      v.advisories.forEach(function (a) {
+        out.push({dependency: v.dependency, scope: v.scope, direct: v.direct, dependencyFixedIn: v.fixedIn, id: a.id, aliases: a.aliases,
+                  cve: (a.aliases || []).filter(function (x) { return x.indexOf("CVE-") === 0; })[0], summary: a.summary,
+                  severity: a.severity, cvss: a.cvss, fixedIn: a.fixedIn, fixedVersions: a.fixedVersions, url: a.url});
+      });
+    });
+    return out;
+  }
+
+  var state = {tab: "findings", query: "", sevs: {}, sort: {}};
+  var tabs = document.getElementById("tabs");
+  Array.prototype.forEach.call(tabs.querySelectorAll("button"), function (b) {
+    b.appendChild(el("span", {"class": "count"}, views[b.getAttribute("data-tab")].rows.length));
+    b.addEventListener("click", function () { state.tab = b.getAttribute("data-tab"); render(); });
+  });
+  document.getElementById("search").addEventListener("input", function (e) { state.query = e.target.value.toLowerCase(); render(); });
+
+  function render() {
+    var view = views[state.tab];
+    Array.prototype.forEach.call(tabs.querySelectorAll("button"), function (b) { b.classList.toggle("active", b.getAttribute("data-tab") === state.tab); });
+    var chips = document.getElementById("chips");
+    while (chips.firstChild) chips.removeChild(chips.firstChild);
+    if (view.sev) SEV.forEach(function (sv) {
+      var c = el("button", {"class": "chip" + (state.sevs[sv] ? " on" : "")}, label(sv));
+      c.addEventListener("click", function () { state.sevs[sv] = !state.sevs[sv]; render(); });
+      chips.appendChild(c);
+    });
+    var anySev = Object.keys(state.sevs).some(function (k) { return state.sevs[k]; });
+    var rows = view.rows.filter(function (r) {
+      if (view.sev && anySev && !state.sevs[view.sev(r)]) return false;
+      return !state.query || view.text(r).toLowerCase().indexOf(state.query) >= 0;
+    });
+    var sort = state.sort[state.tab] || {col: 0, asc: true};
+    var key = view.cols[sort.col][2];
+    rows = rows.slice().sort(function (a, b) { var x = key(a), y = key(b); var c = x < y ? -1 : x > y ? 1 : 0; return sort.asc ? c : -c; });
+    document.getElementById("shown").textContent = rows.length + " of " + view.rows.length + " shown";
+
+    var panel = document.getElementById("panel");
+    while (panel.firstChild) panel.removeChild(panel.firstChild);
+    if (!view.rows.length) { panel.appendChild(el("div", {"class": "empty"}, "Nothing here ✓")); return; }
+    var table = el("table"), head = el("tr");
+    view.cols.forEach(function (c, i) {
+      var th = el("th", {"class": i === sort.col ? "sorted" + (sort.asc ? " asc" : "") : ""}, c[0]);
+      th.addEventListener("click", function () { state.sort[state.tab] = {col: i, asc: i === sort.col ? !sort.asc : true}; render(); });
+      head.appendChild(th);
+    });
+    table.appendChild(el("thead", null, head));
+    var body = el("tbody");
+    rows.slice(0, 2000).forEach(function (r) {
+      var tr = el("tr", {"class": view.detail ? "row" : ""});
+      view.cols.forEach(function (c) { tr.appendChild(el("td", null, c[1](r))); });
+      body.appendChild(tr);
+      if (view.detail) tr.addEventListener("click", function () {
+        var next = tr.nextSibling;
+        if (next && next.classList && next.classList.contains("detail")) { body.removeChild(next); return; }
+        var td = el("td", {colspan: String(view.cols.length)}, view.detail(r));
+        body.insertBefore(el("tr", {"class": "detail"}, td), tr.nextSibling);
+      });
+    });
+    table.appendChild(body);
+    panel.appendChild(table);
+  }
+  if (!data.findings.length && data.vulnerabilities.length) state.tab = "vulnerabilities";
+  render();
+})();
+</script>
+</body>
+</html>

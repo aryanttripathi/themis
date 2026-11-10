@@ -538,3 +538,15 @@ Resolution warnings (missing/invalid transitive POMs, undecryptable passwords) a
 - `.themis.yml`: `privacy: { privateArtifacts: ["io.vendor.internal:*"], projectGroupPrivate: true }`.
 - The cache (`~/.themis/cache`) is owner-only (`rwx------`, files `rw-------`). `--offline` sends nothing.
 - Tests assert on everything a stub server receives (paths, headers, bodies).
+
+## 21. Phase 4 status (upgrade advisor): done
+
+- `UpgradeAdvisor` (`upgrade`, ADVISOR stage) reads `DependencyVulnerabilities` and, per vulnerable dependency: newer stable versions from deps.dev (pre-releases and snapshots dropped), up to 300 candidates checked against OSV in one batch, then the lowest clean candidate whose jar bytecode (fetched from Maven Central into a temp file, deleted after reading; only the Java release is cached) runs on the project's Java release.
+- Output: `UpgradeSuggestion` + an UPGRADE finding (INFO when a safe upgrade exists; MEDIUM when the fix needs a newer Java; LOW when no clean version exists). Transitive dependencies name the direct dependency to bump or the override to add.
+- Same privacy rules as Phase 3; `--offline` uses cached answers only.
+
+## 22. HTML report
+
+- `HtmlReportWriter` writes one self-contained `report.html`: summary cards plus searchable, sortable, filterable tables (Findings, Vulnerabilities, Upgrades, Licenses, Dependencies, Warnings) with an expandable detail row.
+- Safe by construction: data embedded as script-safe JSON, rendered via DOM text nodes only (no `innerHTML`), links only for `https://`, a CSP forbidding any network access, no external CSS/JS/fonts, home directory shown as `~` in jar paths.
+- CLI: when `scan` findings (or `vulns`/`licenses` rows) exceed `report.consoleLimit` (default 25; `--console-limit N`), the console shows the summary only and the HTML report is written to `--output` (default `themis-report/`) and opened in the browser when interactive (not in CI; `--no-open` / `report.open: false`). `--format html` always writes it.

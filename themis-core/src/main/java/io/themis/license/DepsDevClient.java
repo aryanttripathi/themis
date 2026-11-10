@@ -59,7 +59,7 @@ public final class DepsDevClient {
     public static DepsDevClient create(URI baseUrl, Duration initialBackoff) {
         HttpClient http = HttpClient.newBuilder()
                 .connectTimeout(TIMEOUT)
-                .followRedirects(HttpClient.Redirect.NORMAL)
+                .followRedirects(HttpClient.Redirect.NEVER)   // privacy: never bounce a request to another host
                 .proxy(proxySelector())
                 .build();
         return new DepsDevClient(baseUrl, http, initialBackoff);
@@ -73,13 +73,28 @@ public final class DepsDevClient {
         URI uri = baseUrl.resolve("v3/systems/maven/packages/"
                 + URLEncoder.encode(c.ga(), StandardCharsets.UTF_8) + "/versions/"
                 + URLEncoder.encode(c.version(), StandardCharsets.UTF_8));
+        Optional<String> body = get(uri, c.toString());
+        return body.isEmpty() ? Optional.empty() : Optional.of(parse(body.get(), c));
+    }
+
+    /** Every published version of {@code g:a}, as deps.dev lists them; empty if it does not know the package. */
+    public Optional<List<String>> versions(String ga) throws IOException {
+        URI uri = baseUrl.resolve("v3/systems/maven/packages/" + URLEncoder.encode(ga, StandardCharsets.UTF_8));
+        Optional<String> body = get(uri, ga);
+        if (body.isEmpty()) return Optional.empty();
+        List<String> out = new java.util.ArrayList<>();
+        MAPPER.readTree(body.get()).path("versions").forEach(v -> out.add(v.path("versionKey").path("version").asText()));
+        return Optional.of(out);
+    }
+
+    /** Body of a 200; empty on 404; IOException after retries. */
+    private Optional<String> get(URI uri, String what) throws IOException {
         HttpRequest request = HttpRequest.newBuilder(uri)
                 .timeout(TIMEOUT)
                 .header("User-Agent", "Themis/" + Themis.VERSION)
                 .header("Accept", "application/json")
                 .GET()
                 .build();
-
         String lastProblem = "";
         IOException lastException = null;
         for (int attempt = 0; attempt <= RETRIES; attempt++) {
@@ -87,7 +102,7 @@ public final class DepsDevClient {
             try {
                 HttpResponse<String> response = http.send(request, HttpResponse.BodyHandlers.ofString());
                 int status = response.statusCode();
-                if (status == 200) return Optional.of(parse(response.body(), c));
+                if (status == 200) return Optional.of(response.body());
                 if (status == 404) return Optional.empty();
                 lastProblem = "HTTP " + status;
                 lastException = null;
@@ -97,10 +112,10 @@ public final class DepsDevClient {
                 lastException = e;
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
-                throw new InterruptedIOException("Interrupted while querying deps.dev for " + c);
+                throw new InterruptedIOException("Interrupted while querying deps.dev for " + what);
             }
         }
-        String message = "deps.dev request for " + c + " failed after " + (RETRIES + 1) + " attempts: " + lastProblem;
+        String message = "deps.dev request for " + what + " failed after " + (RETRIES + 1) + " attempts: " + lastProblem;
         throw lastException == null ? new IOException(message) : new IOException(message, lastException);
     }
 

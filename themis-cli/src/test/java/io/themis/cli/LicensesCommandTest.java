@@ -179,6 +179,39 @@ class LicensesCommandTest {
         assertThat(cli.out()).containsPattern("com\\.acme:mystery:1\\.0\\s+compile\\s+LicenseRef-Acme\\s+PROPRIETARY\\s+config");
     }
 
+    @Test
+    void manyFindingsGoToAnHtmlReportInsteadOfTheConsole() throws Exception {
+        Path out = tmp.resolve("rep");
+        int exit = cli.run("scan", app.toString(), "--console-limit", "2", "--output", out.toString());
+
+        assertThat(exit).isEqualTo(ThemisCli.EXIT_FINDINGS);
+        assertThat(cli.out()).contains("Findings     : ").contains("exceeds the console limit of 2")
+                .contains("HTML report: " + out.resolve("report.html")).doesNotContain("[HIGH    ]");
+        assertThat(Files.readString(out.resolve("report.html"))).contains("com.acme:agpl-lib:1.0");
+    }
+
+    @Test
+    void consoleLimitComesFromConfigAndCliWins() throws Exception {
+        Files.writeString(app.resolve(".themis.yml"), "report:\n  consoleLimit: 1\n  open: false\n");
+        Path out = tmp.resolve("rep2");
+
+        cli.run("scan", app.toString(), "--output", out.toString());
+        assertThat(cli.out()).contains("HTML report:");
+
+        cli.out.getBuffer().setLength(0);
+        cli.run("scan", app.toString(), "--output", out.toString(), "--console-limit", "100");
+        assertThat(cli.out()).contains("[HIGH    ]").doesNotContain("HTML report:");
+    }
+
+    @Test
+    void htmlFormatCanBeRequestedExplicitly() throws Exception {
+        Path out = tmp.resolve("rep3");
+        cli.run("scan", app.toString(), "--format", "console,html", "--output", out.toString(), "--no-open");
+
+        assertThat(out.resolve("report.html")).exists();
+        assertThat(cli.out()).contains("[HIGH    ]").contains("HTML report:");
+    }
+
     private static String licenses(String name) {
         return "<licenses><license><name>" + name + "</name></license></licenses>";
     }

@@ -32,7 +32,9 @@ public record ConfigFile(
         Set<String> allowArtifacts,
         Optional<Boolean> offline,
         OptionalInt cacheTtlHours,
-        Optional<io.themis.privacy.PrivacyConfig> privacy) {
+        Optional<io.themis.privacy.PrivacyConfig> privacy,
+        Optional<Integer> consoleLimit,
+        Optional<Boolean> openReport) {
 
     public ConfigFile {
         analyzers = analyzers.map(Set::copyOf);
@@ -45,7 +47,7 @@ public record ConfigFile(
     /** A file without any setting. */
     public static ConfigFile empty(Path source) {
         return new ConfigFile(source, OptionalInt.empty(), Optional.empty(), Optional.empty(), Map.of(), Set.of(),
-                Map.of(), Set.of(), Optional.empty(), OptionalInt.empty(), Optional.empty());
+                Map.of(), Set.of(), Optional.empty(), OptionalInt.empty(), Optional.empty(), Optional.empty(), Optional.empty());
     }
 
     /**

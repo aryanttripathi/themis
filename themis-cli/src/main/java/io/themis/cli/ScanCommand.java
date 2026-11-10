@@ -34,7 +34,7 @@ final class ScanCommand implements Callable<Integer> {
     Path projectDir;
 
     @Option(names = "--format", split = ",", defaultValue = "console",
-            description = "Output formats: console, json (default: ${DEFAULT-VALUE}).")
+            description = "Output formats: console, json, html (default: ${DEFAULT-VALUE}).")
     List<String> formats;
 
     @Option(names = "--output", defaultValue = "themis-report",
@@ -50,6 +50,13 @@ final class ScanCommand implements Callable<Integer> {
 
     @Option(names = "--config", description = "Config file (default: DIR/.themis.yml).")
     Path config;
+
+    @Option(names = "--console-limit", description = "Above this many findings, print only the summary and write an HTML report "
+            + "(default: report.consoleLimit in .themis.yml, else " + ReportOutput.DEFAULT_LIMIT + ").")
+    Integer consoleLimit;
+
+    @Option(names = "--no-open", description = "Do not open the HTML report in a browser.")
+    boolean noOpen;
 
     @Option(names = "--java-release", description = "Override the Java release detected from the POM.")
     Integer javaRelease;
@@ -77,9 +84,19 @@ final class ScanCommand implements Callable<Integer> {
                 .scan(projectDir, cfg);
         PrintWriter out = spec.commandLine().getOut();
 
+        ReportOutput.Settings rs = ReportOutput.settings(projectDir, config, consoleLimit, noOpen);
+        boolean htmlRequested = formats.stream().anyMatch(f -> f.trim().equalsIgnoreCase("html"));
         for (String format : formats) {
             switch (format.trim().toLowerCase(Locale.ROOT)) {
-                case "console" -> printConsole(report, out);
+                case "console" -> {
+                    boolean tooMany = report.findings().size() > rs.consoleLimit();
+                    printConsole(report, out, !tooMany);
+                    if (tooMany) {
+                        ReportOutput.tooMany(out, report.findings().size(), "findings", rs.consoleLimit());
+                        if (!htmlRequested) ReportOutput.writeHtml(report, outputDir, rs.open(), out);
+                    }
+                }
+                case "html" -> ReportOutput.writeHtml(report, outputDir, rs.open(), out);
                 case "json" -> out.println("JSON report: " + new JsonReportWriter().write(report, outputDir));
                 default -> {
                     spec.commandLine().getErr().println("error: unsupported format '" + format + "'");
@@ -92,7 +109,7 @@ final class ScanCommand implements Callable<Integer> {
         return report.hasFindingsAtLeast(cfg.failOn()) ? ThemisCli.EXIT_FINDINGS : ThemisCli.EXIT_OK;
     }
 
-    private static void printConsole(ScanReport r, PrintWriter out) {
+    private static void printConsole(ScanReport r, PrintWriter out, boolean rows) {
         out.println("themis " + r.toolVersion());
         out.println("Project      : " + r.project().coordinate() + " (Java " + r.project().javaRelease() + ")");
         out.println("Dependencies : " + r.graph().dependencies().size() + " (" + r.graph().directCount() + " direct)");
@@ -108,7 +125,7 @@ final class ScanCommand implements Callable<Integer> {
                 counts.get(Severity.CRITICAL), counts.get(Severity.HIGH), counts.get(Severity.MEDIUM),
                 counts.get(Severity.LOW), counts.get(Severity.INFO));
 
-        for (Finding f : r.findings()) {
+        if (rows) for (Finding f : r.findings()) {
             out.printf(Locale.ROOT, "  [%-8s] %-13s %s%n", f.severity(), f.type(), f.title());
         }
         r.errors().forEach(e -> out.println("  analyzer '" + e.analyzer() + "' failed: " + e.message()));

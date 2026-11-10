@@ -38,7 +38,8 @@ public final class Themis {
     /** Analyzers wired by default. New analyzers are registered here as phases land. */
     public static List<Analyzer> defaultAnalyzers(Environment env) {
         return List.of(new JavaVersionAnalyzer(), LicenseAnalyzer.create(env.cacheDir(), env.depsDevBaseUrl()),
-                io.themis.vuln.VulnerabilityAnalyzer.create(env.cacheDir(), env.osvBaseUrl()));
+                io.themis.vuln.VulnerabilityAnalyzer.create(env.cacheDir(), env.osvBaseUrl()),
+                io.themis.upgrade.UpgradeAdvisor.create(env.cacheDir(), env.depsDevBaseUrl(), env.osvBaseUrl(), env.mavenCentralUrl()));
     }
 
     /** Names accepted by {@code --only} and the {@code analyzers} key of .themis.yml. */
@@ -86,7 +87,8 @@ public final class Themis {
      */
     /** Runs only the vulnerability analyzer, as {@code themis vulns} does. */
     public static ScanReport vulnerabilities(Path projectDir, ScanConfig config, Environment env) {
-        return defaultEngine(env).scan(projectDir, config.withEnabledAnalyzers(Set.of(io.themis.vuln.VulnerabilityAnalyzer.NAME)));
+        return defaultEngine(env).scan(projectDir, config.withEnabledAnalyzers(
+                Set.of(io.themis.vuln.VulnerabilityAnalyzer.NAME, io.themis.upgrade.UpgradeAdvisor.NAME)));
     }
 
     public static ScanReport licenses(Path projectDir, ScanConfig config, Environment env) {

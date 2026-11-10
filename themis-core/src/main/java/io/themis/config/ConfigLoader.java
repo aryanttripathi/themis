@@ -66,6 +66,12 @@ public final class ConfigLoader {
         public LicensesDto licenses;
         public NetworkDto network;
         public PrivacyDto privacy;
+        public ReportDto report;
+    }
+
+    static final class ReportDto {
+        public Integer consoleLimit;
+        public Boolean open;
     }
 
     static final class PrivacyDto {
@@ -195,7 +201,8 @@ public final class ConfigLoader {
             throw new ConfigException(file + ": network.cacheTtlHours must not be negative");
         }
         return new ConfigFile(file, dto.javaRelease == null ? OptionalInt.empty() : OptionalInt.of(dto.javaRelease),
-                analyzers, failOn, severities, silenced, overrides, allow, offline, ttl, privacy(dto.privacy));
+                analyzers, failOn, severities, silenced, overrides, allow, offline, ttl, privacy(dto.privacy),
+                Optional.ofNullable(dto.report).map(x -> x.consoleLimit), Optional.ofNullable(dto.report).map(x -> x.open));
     }
 
     private static Optional<io.themis.privacy.PrivacyConfig> privacy(PrivacyDto p) {

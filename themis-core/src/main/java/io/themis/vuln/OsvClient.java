@@ -42,7 +42,7 @@ public final class OsvClient {
     private final Duration backoff;
 
     private OsvClient(URI baseUrl, HttpClient http, Duration backoff) {
-        this.baseUrl = requireSafe(baseUrl);
+        this.baseUrl = requireSafeUrl(baseUrl);
         this.http = http;
         this.backoff = backoff;
     }
@@ -60,7 +60,7 @@ public final class OsvClient {
         return new OsvClient(baseUrl, http, initialBackoff);
     }
 
-    static URI requireSafe(URI uri) {
+    public static URI requireSafeUrl(URI uri) {
         String host = String.valueOf(uri.getHost());
         boolean loopback = host.equals("127.0.0.1") || host.equals("localhost") || host.equals("[::1]");
         if (!"https".equalsIgnoreCase(uri.getScheme()) && !loopback) {
