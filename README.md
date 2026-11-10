@@ -12,7 +12,7 @@ Scans a Java/Maven project and reports, in one place:
 
 Only package coordinates leave your machine; source code never does.
 
-> Status: Phase 1. The engine, model, Maven dependency resolution (Maven Resolver), Java-version analyzer, license classifier and CLI work. See [docs/LLD.md](docs/LLD.md#17-phase-1-implementation-checklist).
+> Status: v0.1. Maven and Gradle resolution, licenses, OSV vulnerabilities, runtime-aware upgrade advice, Java version per jar, secrets, PII, suppressions/baseline, console/HTML/JSON/SARIF reports. See [docs/WHY.md](docs/WHY.md), [docs/HLD.md](docs/HLD.md), [docs/LLD.md](docs/LLD.md).
 
 ## Docs
 

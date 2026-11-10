@@ -1,566 +1,443 @@
 # Themis: Low-Level Design
 
-Status: Draft v0.1 · Companion to [HLD.md](HLD.md)
+Status: v0.1 (implemented) · Companion to [HLD.md](HLD.md) · Why: [WHY.md](WHY.md)
 
 ## 1. Modules and packages
 
 ```
 themis/
-├── pom.xml                         parent (Java 17, dependency versions)
-├── themis-core/                    the library: no CLI concerns
+├── pom.xml                           parent: Java 17, dependency versions
+├── themis-core/                      the library (no CLI concerns)
 │   └── io.themis
-│       ├── model/                  immutable domain records
-│       ├── engine/                 ScanEngine, ScanContext, Analyzer SPI
-│       ├── config/                 ScanConfig, LicensePolicy, loader
-│       ├── resolve/                DependencyResolver SPI + maven/ impl
-│       ├── license/                LicenseAnalyzer, SpdxNormalizer, LicenseClassifier
-│       ├── vuln/                   VulnerabilityAnalyzer, OsvClient
-│       ├── javaversion/            JavaVersionAnalyzer, ClassFileVersion
-│       ├── upgrade/                UpgradeAdvisor, VersionCatalog
-│       ├── secrets/                SecretAnalyzer, rules/, Entropy
-│       ├── pii/                    PiiAnalyzer, PiiFieldMatcher
-│       ├── suppress/               Suppressions, Baseline
-│       ├── report/                 ReportWriter SPI + json/, html/, sarif/
-│       └── cache/                  FileCache
-├── themis-cli/                     picocli entry point, packaged as a runnable jar
-│   └── io.themis.cli
-└── docs/
+│       ├── Themis, Environment       entry point; machine-specific settings (Maven, Gradle, cache, API URLs)
+│       ├── model/                    immutable records: Coordinate, Dependency, DependencyGraph, Finding, ScanReport...
+│       ├── engine/                   ScanEngine, ScanContext, Analyzer, Stage, AnalyzerResult
+│       ├── config/                   ScanConfig, ConfigLoader (.themis.yml), ConfigFile, LicensePolicy
+│       ├── resolve/                  DependencyResolver SPI, ProjectSession, AutoDetectingResolver, JavaRelease
+│       │   ├── maven/                MavenDependencyResolver, MavenRuntime, SettingsLoader, ReactorWorkspace, PomSafety...
+│       │   └── gradle/               GradleDependencyResolver, GradleRunner, GradleJdk, GradleProjectSession, themis-init.gradle
+│       ├── license/                  LicenseAnalyzer, LicenseLookup, SpdxNormalizer, LicenseClassifier, DepsDevClient
+│       ├── vuln/                     VulnerabilityAnalyzer, OsvClient, Cvss, Advisory
+│       ├── javaversion/              JavaVersionAnalyzer, ClassFileVersion
+│       ├── upgrade/                  UpgradeAdvisor, JarFetcher, UpgradeSuggestion
+│       ├── source/                   SourceFiles (project walker), SourceConfig
+│       ├── secrets/                  SecretAnalyzer, Secrets (placeholders, entropy, masking)
+│       ├── pii/                      PiiAnalyzer, PiiVocabulary
+│       ├── privacy/                  LookupPrivacy, PrivacyConfig
+│       ├── suppress/                 Suppressor, Suppression, Baseline
+│       ├── cache/                    FileCache
+│       └── report/                   JsonReportWriter, HtmlReportWriter (+ report.html), SarifReportWriter
+├── themis-cli/                       picocli commands, packaged as a shaded runnable jar (themis.jar)
+│   └── io.themis.cli                 ThemisCli, Scan/Deps/Licenses/Vulns/BaselineCommand, CliConfig, ReportOutput, Suppressions
+└── docs/                             WHY, HLD, LLD
 ```
 
-Rule: `cli` depends on `core`; `core` never depends on `cli`. A future `themis-maven-plugin` module will also depend only on `core`.
+Rule: `cli` depends on `core`; `core` never depends on `cli`.
+
+```mermaid
+flowchart LR
+    cli[io.themis.cli] --> themis[io.themis.Themis]
+    themis --> engine & resolve & config
+    engine --> model
+    resolve --> maven[resolve.maven] & gradle[resolve.gradle]
+    themis --> license & vuln & javaversion & upgrade & secrets & pii
+    license & vuln & upgrade --> privacy & cache
+    secrets & pii --> source
+    upgrade --> vuln & javaversion
+    cli --> suppress & report
+    report --> model
+```
 
 ## 2. Domain model (`io.themis.model`)
 
-All model types are Java `record`s (immutable, value equality).
+All model types are Java records (immutable, value equality).
 
-```java
-record Coordinate(String groupId, String artifactId, String version,
-                  String extension,      // "jar" (default), "pom", "zip", ...; type test-jar = jar + classifier "tests"
-                  String classifier) {   // "" for the main artifact
-    Coordinate(String g, String a, String v);   // plain jar
-    String ga();              // "groupId:artifactId"
-    String artifactKey();     // "g:a:extension:classifier" (identity without version)
-    String toString();        // "g:a:v", or "g:a:ext:v" / "g:a:ext:classifier:v" when non-default (Resolver style)
-    static Coordinate parse(String);            // inverse of toString()
-}
-
-enum Scope { COMPILE, RUNTIME, PROVIDED, TEST, SYSTEM, IMPORT;
-    static Scope fromMaven(String);  String mavenName();   // Locale.ROOT, safe under tr-TR
-    static Scope widest(Scope, Scope);                     // compile > runtime > provided > system > test
-}
-
-record Dependency(
-    Coordinate coordinate,     // one entry per artifact AND version
-    Scope scope,               // widest among the modules that reach it
-    boolean direct,            // declared in (one of) the module POM(s)
-    List<Coordinate> path,     // declaring module -> ... -> this ("pulled in via"); most direct/shortest example
-    Optional<Path> jarFile,    // resolved artifact file if it is a jar (system scope: the systemPath)
-    List<Coordinate> modules   // modules whose resolved graph contains it (just the project if single-module)
-) {}
-
-record DependencyGraph(Coordinate root, List<Dependency> dependencies,
-                       List<String> warnings) {}   // non-fatal problems, Maven wording
-
-record ProjectInfo(
-    Path rootDir,
-    Coordinate coordinate,
-    int javaRelease,           // from maven.compiler.release / source / target, default 17
-    List<Path> sourceRoots,
-    List<Path> resourceRoots
-) {}
-
-enum Severity { INFO, LOW, MEDIUM, HIGH, CRITICAL }
-
-enum FindingType { LICENSE, VULNERABILITY, JAVA_VERSION, UPGRADE, SECRET, PII }
-
-record Location(Path file, int line, int column) {}
-
-record Finding(
-    String id,                 // stable fingerprint, used for suppression/baseline
-    FindingType type,
-    Severity severity,
-    String title,
-    String detail,
-    Optional<Coordinate> dependency,
-    Optional<Location> location,
-    Map<String, String> evidence   // e.g. source="pom", spdx="AGPL-3.0-only"
-) {}
-
-record ScanReport(
-    String toolVersion,
-    Instant startedAt,
-    Duration duration,
-    ProjectInfo project,
-    DependencyGraph graph,
-    List<Finding> findings,
-    List<AnalyzerError> errors
-) {}
-
-record AnalyzerError(String analyzer, String message) {}
+```mermaid
+classDiagram
+    class Coordinate {
+      +String groupId
+      +String artifactId
+      +String version
+      +String extension
+      +String classifier
+      +ga() String
+      +artifactKey() String
+    }
+    class Dependency {
+      +Coordinate coordinate
+      +Scope scope
+      +boolean direct
+      +List~Coordinate~ path
+      +Optional~Path~ jarFile
+      +List~Coordinate~ modules
+    }
+    class DependencyGraph {
+      +Coordinate root
+      +List~Dependency~ dependencies
+      +List~String~ warnings
+    }
+    class ProjectInfo {
+      +Path rootDir
+      +Coordinate coordinate
+      +int javaRelease
+      +List~Path~ sourceRoots
+      +List~Path~ resourceRoots
+    }
+    class Finding {
+      +String id
+      +FindingType type
+      +Severity severity
+      +String title
+      +String detail
+      +Optional~Coordinate~ dependency
+      +Optional~Location~ location
+      +Map evidence
+    }
+    class ScanReport {
+      +ProjectInfo project
+      +DependencyGraph graph
+      +List~Finding~ findings
+      +List~AnalyzerError~ errors
+      +List~Object~ data
+      +List~SuppressedFinding~ suppressed
+      +dataOf(Class) List
+    }
+    DependencyGraph "1" --> "*" Dependency
+    Dependency --> Coordinate
+    ScanReport --> ProjectInfo
+    ScanReport --> DependencyGraph
+    ScanReport "1" --> "*" Finding
+    ScanReport "1" --> "*" SuppressedFinding
+    SuppressedFinding --> Finding
+    Finding --> Location
 ```
 
-Analyzer-specific details (license info, advisories, upgrade suggestions) are carried in typed records too, so the report can render rich tables:
+- `Scope`: `COMPILE, RUNTIME, PROVIDED, SYSTEM, TEST, IMPORT`; `Scope.widest(a, b)` with order compile > runtime > provided > system > test (used when merging modules).
+- `Severity`: `INFO < LOW < MEDIUM < HIGH < CRITICAL`; `Severity.fromCvss(score)`: >= 9.0 CRITICAL, >= 7.0 HIGH, >= 4.0 MEDIUM, > 0 LOW.
+- `FindingType`: `LICENSE, VULNERABILITY, JAVA_VERSION, UPGRADE, SECRET, PII`.
+- Typed analyzer outputs travel in `ScanReport.data`: `LicenseInfo`, `DependencyVulnerabilities` (with `Advisory`), `JavaRequirement`, `UpgradeSuggestion`.
 
-```java
-enum LicenseCategory { PERMISSIVE, WEAK_COPYLEFT, STRONG_COPYLEFT, NETWORK_COPYLEFT, PROPRIETARY, UNKNOWN }
+### Finding ids (stable: used by baselines and `suppress:`)
 
-record LicenseInfo(Coordinate dep, List<String> spdxIds, LicenseCategory category, String source) {}
-
-record Advisory(String id, List<String> aliases, Severity severity, String summary,
-                List<String> fixedVersions, String url) {}
-
-record UpgradeSuggestion(Coordinate current, String recommendedVersion,
-                         int requiredJavaRelease, List<String> fixes, boolean sameMajor) {}
-```
+| Type | Id format |
+|---|---|
+| LICENSE | `LICENSE:<CATEGORY>:<group>:<artifact>` (no version: survives bumps) |
+| VULNERABILITY | `VULNERABILITY:<advisory id>:<group>:<artifact>` |
+| JAVA_VERSION | `JAVA_VERSION:requires-java-<N>:<group>:<artifact>` |
+| UPGRADE | `UPGRADE:<group>:<artifact>` |
+| SECRET | `SECRET:<rule>:<relative path>:<sha256 of the line with the secret masked, 12 hex>` |
+| PII | `PII:<rule>:<relative path>:<field>:<hash of the trimmed line>` |
 
 ## 3. Engine (`io.themis.engine`)
 
 ```java
 interface Analyzer {
-    String name();                              // "licenses", "vulns", ...
-    Stage stage();                              // DEPENDENCY, ADVISOR, SOURCE
+    String name();                    // "licenses", "vulns", "javaversion", "upgrade", "secrets", "pii"
+    Stage stage();                    // DEPENDENCY, SOURCE, ADVISOR
     AnalyzerResult analyze(ScanContext ctx) throws Exception;
 }
-
-enum Stage { DEPENDENCY, ADVISOR, SOURCE }
-
-final class ScanContext {
-    ProjectInfo project();
-    DependencyGraph graph();
-    ScanConfig config();
-    <T> List<T> resultsOf(Class<T> type);       // advisors read earlier stage outputs
-}
-
 record AnalyzerResult(List<Finding> findings, List<Object> data) {}
+final class ScanContext {            // project(), graph(), config(), metadata(), resultsOf(Class)
+}
 ```
 
-### `ScanEngine.scan(Path projectDir, ScanConfig cfg)`
-
+```mermaid
+flowchart TB
+    START([scan dir, config]) --> Q{any DEPENDENCY or<br/>ADVISOR analyzer enabled?}
+    Q -->|no| SO[ProjectInfo from the directory only<br/>empty graph, no build tool, no network]
+    SO --> RS[run SOURCE analyzers in parallel]
+    Q -->|yes| OPEN[resolver.open: ProjectSession]
+    OPEN --> RES[session.resolveDependencies]
+    RES --> P1[run DEPENDENCY + SOURCE analyzers in parallel]
+    P1 --> P2[run ADVISOR analyzers<br/>read earlier data via resultsOf]
+    P2 --> CLOSE[close session]
+    RS --> SORT
+    CLOSE --> SORT[sort findings: severity desc, type, id]
+    SORT --> REP([ScanReport])
 ```
-1. session  = resolver.open(projectDir, cfg)        (one build-tool session per scan, closed after step 2)
-   project  = session.project()
-2. graph    = session.resolveDependencies()
-3. ctx      = new ScanContext(project, graph, cfg)
-4. run all enabled DEPENDENCY + SOURCE analyzers in parallel   (they are independent)
-5. run ADVISOR analyzers (need vuln + javaversion data)
-6. findings = suppressions.filter(allFindings)
-7. sort by severity desc, then type
-8. return ScanReport
-```
 
-Each analyzer runs inside `try/catch`; an exception becomes an `AnalyzerError` and the scan continues. Concurrency uses `Executors.newFixedThreadPool(n)` on Java 17 (virtual threads once we raise the baseline to 21).
+Each analyzer runs in its own `Future`; an exception becomes an `AnalyzerError(name, message)` and the scan continues. The session stays open while analyzers run because the license analyzer reads POM licenses from it (`DependencyMetadata`).
 
-## 4. Dependency resolution (`resolve`)
+## 4. Dependency resolution (`io.themis.resolve`)
 
 ```java
 interface DependencyResolver {
-    boolean supports(Path projectDir);                    // pom.xml present?
-    ProjectSession open(Path projectDir, ScanConfig cfg); // builds the project model once
+    boolean supports(Path projectDir);
+    ProjectSession open(Path projectDir, ScanConfig config);
 }
-
-interface ProjectSession extends AutoCloseable {          // one per scan
-    ProjectInfo project();                                // from the effective model
-    DependencyGraph resolveDependencies();                // throws ResolutionException
-    void close();
-}
-
-record ResolverOptions(Path userSettings, Optional<Path> globalSettings, Optional<Path> localRepository,
-                       Path settingsSecurity, boolean ignorePomRepositories) {
-    static ResolverOptions defaults();  // ~/.m2/settings.xml, $MAVEN_HOME/conf/settings.xml, -Dmaven.repo.local, -Dsettings.security
-    ResolverOptions withUserSettings(Path);  ResolverOptions withIgnorePomRepositories(boolean);
-}
-
-final class ResolutionException extends RuntimeException {
-    List<String> unresolved();          // "g:a:ext[:classifier]:version" of every unresolvable artifact
+interface ProjectSession extends DependencyMetadata, AutoCloseable {
+    ProjectInfo project();
+    DependencyGraph resolveDependencies();
+    PomLicenses pomLicenses(Coordinate dependency);
 }
 ```
 
-`ProjectInspector` remains as a library convenience (`inspect(dir, cfg)` = open a session, return `project()`); the engine does not use it. `EmptyDependencyResolver(delegate)` takes project facts from another resolver and reports no dependencies (tests, source-only scans). Java-release detection lives in `JavaRelease` (`maven.compiler.release` > `.target` > `.source` > `java.version`; `1.8` -> 8, `21.0.2` -> 21; default 17).
+`AutoDetectingResolver` picks the first resolver that supports the directory: Maven when `pom.xml` exists, otherwise Gradle when `settings.gradle[.kts]` or `build.gradle[.kts]` exists, otherwise a clear error.
 
-Implemented in `io.themis.resolve.maven` on **Maven Resolver 1.9.27** (`maven-resolver-supplier`, i.e. `RepositorySystemSupplier`, no DI container) plus **Maven 3.9.16** `maven-resolver-provider`, `maven-model-builder` and `maven-settings-builder` (Maven 3.9.16 itself ships Resolver 1.9.27, so the pair is consistent). Nothing parses dependency trees by hand.
+### 4.1 Maven (`resolve.maven`)
 
-| Class | Role |
-|---|---|
-| `MavenDependencyResolver` | The `DependencyResolver`; `open` creates a `MavenProjectSession`. |
-| `MavenProjectSession` | One scan: one `MavenRuntime`, the reactor with effective models built once, resolution + merge. |
-| `MavenRuntime` | `RepositorySystem` + session from settings, two-phase model building with a per-runtime `ModelCache`, warnings. `AutoCloseable` (shuts the system down; also if session setup fails). |
-| `SettingsLoader` | Global + user settings.xml merged and interpolated; each server/proxy password decrypted separately. |
-| `SettingsProfiles` | settings.xml profiles -> POM "external profiles" (activation, properties, repositories). |
-| `RepositoryModelResolver` | `ModelResolver` for the model builder: parents, BOM imports and version ranges resolved through the session. |
-| `ReactorWorkspace` | `WorkspaceReader` serving module POMs of a multi-module build. |
-| `MavenProjectInfo` | Effective model -> `ProjectInfo` (coordinate, Java release, effective source/resource roots). |
-| `PomSafety` | Rejects project POMs with a DOCTYPE (XXE), silently (no parser noise on stderr). |
-
-**Opening a session (reactor loading), mirroring Maven's two-phase project building:**
-1. **Phase 1** (`setTwoPhaseBuilding(true)`) for the root POM and, recursively, for every `<modules>` entry of its phase-1 model (so modules of active profiles count): parents (on disk via `relativePath` or from repositories, e.g. `spring-boot-starter-parent`), inheritance, profile activation incl. settings profiles, interpolation. The module coordinate is taken from this model, so CI-friendly versions (`${revision}`, `${sha1}`, `${changelist}`, from root `<properties>` or `-D` system properties) are final. A coordinate still containing `${` fails loudly with `ResolutionException` instead of being looked up remotely.
-2. Install `ReactorWorkspace` with all module coordinates -> POM files.
-3. **Phase 2** for every module: `dependencyManagement` imports (BOMs, which may themselves be modules, imported by the root or a sibling), management injection, normalization. All models come from one `ModelCache`, so a parent/BOM shared by modules is read once.
-4. `project()` = `MavenProjectInfo` of the root model.
-
-**Session settings** (`MavenRepositorySystemUtils.newSession()`, i.e. Maven's own selectors and transformers):
-- Local repository: `ResolverOptions.localRepository` > settings `<localRepository>` > `~/.m2/repository`.
-- Settings mirrors, then Maven 3.8.1+'s `maven-default-http-blocker` (`external:http:*`, blocked) appended unless already configured; active proxies; server credentials (`DefaultAuthenticationSelector`, matched by server id).
-- `ScanConfig.offline()` = resolver offline mode (local repository only; `file:` repositories included).
-- System properties + `env.*` for interpolation and profile activation; settings `<activeProfiles>`.
-- Transport defaults for an interactive CLI: `aether.connector.connectTimeout=10000`, `requestTimeout=60000`, `http.retryHandler.count=2`, `http.retryHandler.intervalMax=20000`, user agent `Themis/<version>`. Any `-D` system property of the same name overrides them. The default DF collector is kept.
-- A repository listener records Maven's warnings for transitive POMs that are missing ("The POM for g:a:jar:v is missing, no dependency information available") or invalid ("... is invalid, transitive dependencies (if any) will not be available: <reason>"). Like mvn, these are warnings, not failures (lenient descriptor policy).
-
-**`resolveDependencies()`:** for each module (reactor order):
-1. **Collect + resolve** with `RepositorySystem.resolveDependencies`: root = module artifact; dependencies and managed dependencies (incl. imported BOM entries) from its effective model; repositories from the effective model (super-POM `central`, the project's, its parents' and active settings profiles' `<repositories>`) with mirrors/proxies/auth applied. Maven Resolver does nearest-wins mediation (equal depth: first declaration wins; conflict losers removed, as in `mvn dependency:tree`), scope derivation (e.g. compile under runtime -> runtime; a direct declaration's scope wins over the same artifact reached transitively), managed versions *and scopes* for transitives, optional (transitive optionals dropped), `<exclusions>`, version ranges (highest match, also for parents/imports).
-2. A `DependencyFilter` keeps the wanted scopes and skips reactor siblings, so their jars (never built) are not requested; their POMs come from the workspace, so their dependencies are still collected.
-3. **Walk** the resolved tree depth-first, pre-order, keyed by `g:a:extension:classifier` (classifier artifacts such as `linux-x86_64`/`linux-aarch_64` jars or a `test-jar` next to the main jar stay distinct). Each node becomes a `Dependency`: coordinate = `g:a:baseVersion` + extension + classifier, `Scope`, `direct` = child of the module root, `path` = module -> ... -> node (siblings are not emitted but walked through, so they appear in paths), `jarFile` = resolved file when the extension is `jar` (system scope: the `systemPath`), `modules` = [module]. A path guard stops cycles.
-4. **Merge modules** by `g:a:extension:classifier:version`: one entry per distinct version (module `core` on 3.12.0 and `app` on 3.14.0 give two entries); for the same artifact and version, `modules` = union in reactor order, `scope` = widest (`compile > runtime > provided > system > test`: shipped first, then environment-supplied, then test), `direct` if direct anywhere, `path` = the most direct, then shortest, example.
-5. The graph carries `runtime.warnings()` (descriptor problems, undecryptable passwords).
-
-**Errors**: a model that cannot be built (missing parent/BOM, uninterpolated module version) or an artifact that cannot be resolved raises `ResolutionException`, naming the project, the unresolvable artifacts and the resolver's cause chain (e.g. "Blocked mirror for repositories: [...]"); the CLI prints `error: ...` and exits 2.
-
-**Scopes.** `compile`, `runtime`, `provided` and `system` by default; `--include-test` adds `test`. `provided`/`system` jars are not shipped with the application but do run in production (servlet API, container libraries, vendor jars) and can carry vulnerabilities and license obligations, so they are reported as `Scope.PROVIDED` / `Scope.SYSTEM` and later analyzers decide their severity. `test` stays opt-in because it never reaches production.
-
-**Settings.**
-- Mirrors, proxies, servers, local repository, `<activeProfiles>`.
-- Settings profiles are converted to POM "external profiles": the model builder evaluates their activation (`activeByDefault`, jdk, os, property, file, `<activeProfiles>`) and injects their `<properties>` and `<repositories>` into every model. For the *initial* repository list (used before any model exists, e.g. to fetch a remote parent) only profiles active by id or `activeByDefault` are considered.
-- Passwords are decrypted per server/proxy. One that cannot be decrypted is dropped (never sent still encrypted), a warning names only the server/proxy id, and the scan continues without it.
-
-**Security.**
-- **Credentials follow the server id.** Like Maven, credentials in `<servers>` are sent to any repository whose id matches, including a repository declared by the (untrusted) POM being scanned. A maacme POM can therefore declare `<repository><id>corp-nexus</id><url>http://attacker/...</url>` and receive the corp-nexus credentials.
-- **Plain HTTP is blocked** by the always-installed `external:http:*` blocker mirror (Maven 3.8.1+ behaviour, independent of `MAVEN_HOME`). A user's own mirror for that repository (or `mirrorOf *`) takes precedence. Like Maven's, the blocker does not cover `localhost` / `127.0.0.1` (Maven regards them as local), and it does nothing against HTTPS repositories declared by a POM.
-- **`--ignore-pom-repositories`** (`ResolverOptions.ignorePomRepositories`; default off for now) resolves only from settings mirrors, settings profile repositories and Central. POM-declared repositories of the project, its parents and its dependencies' POMs (`setIgnoreArtifactDescriptorRepositories`) are never contacted.
-- **Recommendation for CI and untrusted code:** configure a `mirrorOf *` mirror (all traffic goes to one trusted repository manager, so POM-declared URLs are never used), or run with `--ignore-pom-repositories`. Keep credentials only on the mirror's server id.
-- **XXE:** project POMs (root and modules) are checked with a DTD-disallowing parser before Maven reads them. POMs fetched from repositories are parsed by Maven's MXParser, which does not resolve external entities (verified: such a POM fails with "could not resolve entity").
-
-**Testing.**
-- Component tests build a hermetic file repository in a `@TempDir` (`FixtureRepo`, published as the core test-jar for CLI tests; it also writes `maven-metadata.xml` for version ranges). Its generated settings.xml sets a temp local repository and mirrors `central` to an empty directory; there are no global settings and no settings-security.
-- CLI tests go through `ThemisCli.newCommandLine(ResolverOptions)`, so `-Dmaven.repo.local`, `MAVEN_HOME` and the real `~/.m2` never leak into them; `ScanEngineTest` uses fixture options too.
-- One test tagged `network` (excluded by default; `-Pnetwork` or `-Dgroups=network`) resolves `commons-text` from Maven Central with the real `~/.m2/settings.xml`.
-
-**Deferred / not supported (Phase 1):**
-- Fallback to `mvn dependency:tree` when the embedded resolver fails: deferred. The embedded resolver handles settings credentials, mirrors and proxies, so it is not needed for the common cases.
-- Maven 4 POMs (model 4.1.0) and Maven 4 consumer/build POM features.
-- Settings server `<configuration>` (custom HTTP headers, per-server timeouts); `.mvn/maven.config` / `.mvn/jvm.config` (e.g. `-Drevision` set there is not read; pass it as a system property).
-- A module whose parent is a sibling found only by coordinates, not via `relativePath` (phase 1 runs before the workspace exists).
-- Extensions (`.mvn/extensions.xml`, `<extensions>true</extensions>` plugins) that alter resolution, and custom artifact handlers beyond Maven's built-in types.
-
-## 5. License analysis (`license`)
-
-### Lookup order (first hit wins, source recorded in evidence)
-1. User override in config (`licenses.overrides["g:a"]`).
-2. `<licenses>` of the artifact's POM.
-3. Walk `<parent>` POMs up to 5 levels.
-4. deps.dev: `GET /v3/systems/maven/packages/{g:a}/versions/{v}` -> `licenses`.
-5. `META-INF/LICENSE*` inside the jar (text fingerprint match against known licenses).
-6. Otherwise `UNKNOWN`.
-
-### SPDX normalization
-`SpdxNormalizer` maps names and URLs to SPDX ids using a bundled alias table:
-
-| Raw value | SPDX |
-|---|---|
-| "The Apache Software License, Version 2.0", `apache.org/licenses/LICENSE-2.0` | `Apache-2.0` |
-| "MIT License", "The MIT License" | `MIT` |
-| "GNU Affero General Public License v3" | `AGPL-3.0-only` |
-| "Eclipse Public License - v 2.0" | `EPL-2.0` |
-
-Matching: lowercase, strip punctuation and the words "the"/"license"/"version", then exact alias lookup, then URL lookup.
-
-### Classification
-`LicenseClassifier` maps SPDX ids to `LicenseCategory`:
-
-| Category | SPDX ids (initial set) |
-|---|---|
-| PERMISSIVE | Apache-2.0, MIT, BSD-2-Clause, BSD-3-Clause, ISC, 0BSD, Unlicense, CC0-1.0 |
-| WEAK_COPYLEFT | LGPL-2.1-*, LGPL-3.0-*, MPL-2.0, EPL-1.0, EPL-2.0, CDDL-1.0, CDDL-1.1 |
-| STRONG_COPYLEFT | GPL-2.0-*, GPL-3.0-* |
-| NETWORK_COPYLEFT | AGPL-3.0-*, SSPL-1.0 |
-| UNKNOWN | anything else |
-
-Dual-licensed artifacts (e.g. `EPL-2.0 OR GPL-2.0-with-classpath-exception`) take the **least restrictive** option, recorded in evidence.
-
-### Policy -> Finding
-```yaml
-licenses:
-  deny:  [NETWORK_COPYLEFT, STRONG_COPYLEFT]   # -> HIGH
-  warn:  [WEAK_COPYLEFT, UNKNOWN]              # -> MEDIUM / LOW
-  allowArtifacts: ["org.mariadb.jdbc:mariadb-java-client"]
+```mermaid
+sequenceDiagram
+    participant S as MavenProjectSession
+    participant RT as MavenRuntime
+    participant MB as maven-model-builder
+    participant RS as Maven Resolver
+    S->>RT: open(ResolverOptions): settings (user + global, decrypted), local repo,<br/>mirrors (+ HTTP blocker), proxies, credentials, profiles, transport defaults
+    S->>MB: phase 1 for every module (raw coordinates, ${revision} interpolated)
+    S->>S: install ReactorWorkspace (modules served locally)
+    S->>MB: phase 2 effective models (parents, BOM imports incl. sibling BOMs, ModelCache)
+    S->>RS: collect + resolve per module (DependencyFilter drops scopes and sibling modules)
+    RS-->>S: mediated tree (nearest wins, exclusions, optional dropped)
+    S->>S: walk tree depth-first with paths, merge modules by g:a:ext:classifier:version
 ```
 
-## 6. Vulnerabilities (`vuln`)
+- Scopes: compile, runtime, provided, system by default; test with `--include-test`.
+- Each dependency carries its path from the declaring module, the declaring modules, and the resolved jar.
+- Warnings use Maven's wording ("The POM for ... is missing, no dependency information available").
+- `--lenient`: a `DependencyResolutionException` with a partial result becomes a warning; the partial graph is used.
+- Security: `PomSafety` rejects DOCTYPEs in project POMs (XXE); the `external:http:*` blocker mirror is always installed; `--ignore-pom-repositories` resolves only from settings mirrors/profiles and Central.
+- Transport defaults (overridable with `-D`): connect timeout 10 s, request timeout 60 s, 2 retries, max retry interval 20 s, User-Agent `Themis/<version>`.
 
-`OsvClient`:
-- `POST https://api.osv.dev/v1/querybatch` with up to 1000 queries:
-  `{"package":{"ecosystem":"Maven","name":"g:a"},"version":"v"}`
-- Batch response returns only ids; then `GET /v1/vulns/{id}` per unique id (cached for 24 h).
-- Severity: parse the CVSS v3/v4 vector in `severity[]` -> score -> `Severity`
-  (≥9.0 CRITICAL, ≥7.0 HIGH, ≥4.0 MEDIUM, >0 LOW); fall back to `database_specific.severity`.
-- Fixed versions: from `affected[].ranges[].events[].fixed` for the matching package.
+### 4.2 Gradle (`resolve.gradle`)
 
-HTTP: `java.net.http.HttpClient`, 10 s timeout, 3 retries with exponential backoff, honours `HTTPS_PROXY`.
-
-## 7. Java version (`javaversion`)
-
-`ClassFileVersion.read(JarFile)`:
-1. Iterate entries ending in `.class`, skipping `module-info.class` and `META-INF/versions/**`.
-2. Read the first 8 bytes: magic `0xCAFEBABE`, minor (u2), **major (u2)**.
-3. Take the **maximum** major over all classes (one class compiled for 21 makes the jar need 21).
-4. Java release = `major - 44` (52 -> 8, 55 -> 11, 61 -> 17, 65 -> 21).
-5. Multi-release jars (`Multi-Release: true` in the manifest): the base version is the requirement; versioned entries are reported as "enhanced on N+".
-
-Finding: if `requiredRelease > project.javaRelease` -> `JAVA_VERSION`, `HIGH` (the build may compile but fail at runtime with `UnsupportedClassVersionError`).
-
-## 8. Upgrade advisor (`upgrade`)
-
-Input: a vulnerable dependency `d` with advisories `A`, project release `J`.
-
-```
-candidates = versionCatalog.versionsAfter(d.ga, d.version)   // maven-metadata.xml, sorted (ComparableVersion)
-             .filter(v -> !isPreRelease(v))                    // drop -alpha, -beta, -RC, -M, -SNAPSHOT
-
-for v in candidates (ascending):
-    if osv.hasAdvisories(d.ga, v) with severity >= threshold: continue
-    req = javaVersion.of(download(d.ga, v))                    // cached per version
-    if req > J: continue
-    return UpgradeSuggestion(d, v, req, A.ids, major(v) == major(d.version))
-
-return "no compatible fix; newest fix requires Java X" (if one exists)
+```mermaid
+sequenceDiagram
+    participant G as GradleDependencyResolver
+    participant J as GradleJdk
+    participant R as GradleRunner
+    participant W as ./gradlew + themis-init.gradle
+    G->>J: wrapper version (gradle-wrapper.properties) vs current JDK
+    J-->>G: JAVA_HOME override if needed (THEMIS_GRADLE_JAVA_HOME, else java_home)
+    G->>R: run(projectDir, includeTest, offline)
+    R->>W: --init-script ... -q themisDependencies -Pthemis.output=graph.json
+    W->>W: for each project: resolve compileClasspath, runtimeClasspath (testRuntimeClasspath)<br/>BFS paths, skip sibling projects and platforms/BOMs, collect jar files<br/>POM licenses via ArtifactResolutionQuery (up to 5 parents)
+    W-->>R: graph.json
+    R-->>G: GradleDump (or "Gradle failed" + "What went wrong" + JDK hint)
+    G->>G: GradleProjectSession: scopes, merge subprojects, ProjectInfo
 ```
 
-Notes:
-- Ascending order gives the smallest jump, which minimizes breaking changes.
-- Same-major candidates are tried first, then the next major.
-- If `d` is transitive, the suggestion names the **direct** dependency to bump (from `path[1]`) and also offers a `<dependencyManagement>` override.
-- Jar downloads for version checks go to the cache, not the project.
+Scope mapping per project: in compile and runtime classpaths = COMPILE; runtime only = RUNTIME; compile only (`compileOnly`, e.g. Lombok) = PROVIDED; test runtime only = TEST. Subprojects merge like Maven modules. A project without repositories (e.g. a root that only applies dependency management) is skipped with a warning.
 
-## 9. Secret detection (`secrets`)
+JDK limits used by `GradleJdk.maxSupportedJdk`: Gradle 6.x and 7.0-7.2 = 16, 7.3-7.4 = 17, 7.5 = 18, 7.6 / 8.0-8.2 = 19, 8.3-8.4 = 20, 8.5-8.7 = 21, 8.8-8.9 = 22, 8.10-8.13 = 23, 8.14 = 24, 9 = 25.
 
-Scanned files: `**/*.java` (AST) and `*.properties`, `*.yml`, `*.yaml`, `*.env`, `Dockerfile`, `*.json`, `*.xml` (line-based), excluding `target/`, `.git/`, `node_modules/`.
+## 5. Licenses (`io.themis.license`)
 
-### Rules
-```java
-record SecretRule(String id, String name, Pattern pattern, Severity severity, double minEntropy) {}
+```mermaid
+flowchart LR
+    D[Dependency] --> O{licenses.overrides<br/>exact g:a:v, g:a, or * pattern}
+    O -->|hit| R[source: config]
+    O -->|miss| P{POM licenses<br/>own or inherited}
+    P -->|recognised| R2[source: pom / parent-pom]
+    P -->|none| PRIV{public coordinate?}
+    PRIV -->|yes| DD{deps.dev<br/>cached 30 days}
+    PRIV -->|no: internal / snapshot| JAR
+    DD -->|recognised| R3[source: deps.dev]
+    DD -->|none| JAR{license text in jar}
+    JAR -->|fingerprint match| R4[source: jar:entry]
+    JAR -->|none| U[UNKNOWN]
 ```
 
-| id | Detects | Pattern (simplified) |
+- `SpdxNormalizer`: bundled `aliases.tsv` (names and URLs) and the SPDX id list; matching lowercases, strips punctuation and noise words; multiple `<license>` entries combine with `OR`.
+- `LicenseClassifier`: SPDX expression to category; `OR` takes the least restrictive option, `AND` the most restrictive; `GPL ... WITH Classpath-exception` = weak copyleft.
+- `LicensePolicy` defaults: NETWORK_COPYLEFT HIGH, STRONG_COPYLEFT HIGH, PROPRIETARY MEDIUM, UNKNOWN LOW, WEAK_COPYLEFT INFO, PERMISSIVE no finding. Test scope capped at INFO; provided/system one level lower. `allowArtifacts` (with `*`) suppresses findings but keeps the data.
+
+## 6. Vulnerabilities (`io.themis.vuln`)
+
+1. Public coordinates (see section 11) not in the cache go to `POST /v1/querybatch` (up to 1000 per call); answers cached 24 h under `osv-query`.
+2. Unique advisory ids not cached: `GET /v1/vulns/{id}`, 8 in parallel, cached 24 h under `osv-vuln`. Withdrawn advisories are ignored.
+3. Severity: CVSS v3 base score computed from the vector (`Cvss`, FIRST spec formulas), else the database rating (GHSA `MODERATE` = MEDIUM), else MEDIUM. Test-scope findings capped at LOW.
+4. Fixed version per advisory: smallest `fixed` event of the package's ECOSYSTEM ranges above the current version (`ComparableVersion`); per dependency: the version that fixes all advisories.
+5. OSV unreachable = analyzer error, never "no vulnerabilities". `--offline` answers from the cache and marks the rest "not checked".
+
+## 7. Java version (`io.themis.javaversion`)
+
+`ClassFileVersion.scanJar`: read the first 8 bytes of every `.class` (magic `0xCAFEBABE`, minor, major), skip `module-info.class` and `META-INF/versions/**`, take the maximum major; release = major - 44. Multi-release jars report the base level. Finding when the release exceeds the project's (`JAVA_VERSION`, HIGH).
+
+## 8. Upgrade advisor (`io.themis.upgrade`)
+
+```mermaid
+flowchart TB
+    V[vulnerable dependency d, project Java J] --> PRIV{public?}
+    PRIV -->|no| N1[note: not looked up]
+    PRIV -->|yes| VER[versions of g:a from deps.dev<br/>cached 24 h]
+    VER --> CAND[newer than current, stable only<br/>no alpha/beta/RC/M/snapshot<br/>ascending, up to 300]
+    CAND --> OSVB[one OSV batch query for the candidates]
+    OSVB --> CLEAN[candidates with no known advisories]
+    CLEAN --> LOOP{next clean candidate<br/>max 3 jar checks}
+    LOOP --> JAR[download jar from Central to a temp file<br/>read class-file version, delete jar<br/>cache release forever]
+    JAR --> FIT{release <= J?}
+    FIT -->|yes| REC[recommend: version, Java needed,<br/>same major?, via direct dependency]
+    FIT -->|no| LOOP
+    LOOP -->|exhausted| N2[note: lowest fix needs Java X]
+```
+
+Findings: UPGRADE INFO with a recommendation ("Upgrade g:a 1.0 -> 1.2 (fixes 3 advisories; runs on Java 8+)"); MEDIUM when the only fixes need a newer Java; LOW when no clean version exists. For transitive dependencies the detail names the direct dependency (`path[1]`) and the override option (Maven `<dependencyManagement>`, Gradle constraints).
+
+## 9. Secrets (`io.themis.secrets`)
+
+Files: everything under the project root except build output, VCS/IDE folders, `node_modules`, files over 1 MB and `secrets.exclude` / `pii.exclude` globs (`SourceFiles`). Candidate files: `.properties .yml .yaml .env* .json .xml .conf .cfg .ini .toml .sh .gradle .kts .tf .tfvars .pem .key .sql .txt .java`, Dockerfiles, docker-compose.
+
+```mermaid
+flowchart TB
+    LINE[each line] --> IGN{themis:ignore here<br/>or on the comment line above?}
+    IGN -->|yes| SKIP[skip]
+    IGN -->|no| KNOWN{known format?}
+    KNOWN -->|yes| F1[finding: rule severity]
+    KNOWN -->|no, config file| ASG{key = value with a secret-like key?<br/>password, token, api-key, client-secret...}
+    ASG -->|no| SKIP
+    ASG -->|yes| REAL{"looks real?<br/>length >= 8, no spaces, entropy >= 3.0,<br/>not placeholders: $&#123;...&#125; $VAR &#123;&#123;...&#125;&#125; ENC(...) changeme"}
+    REAL -->|yes| F2[generic-secret-assignment, HIGH]
+    REAL -->|no| SKIP
+    JAVA[.java files] --> AST[JavaParser: secret-named constants with literals,<br/>setPassword-style calls with literals,<br/>@Value defaults with secret keys]
+    AST --> F3[java-hardcoded-secret / spring-value-default-secret, HIGH]
+```
+
+| Rule | Detects | Severity |
 |---|---|---|
-| `aws-access-key` | AWS access key id | `\b(AKIA\|ASIA)[0-9A-Z]{16}\b` |
-| `private-key` | PEM private key | `-----BEGIN (RSA \|EC \|OPENSSH )?PRIVATE KEY-----` |
-| `jwt` | JSON Web Token | `eyJ[\w-]+\.eyJ[\w-]+\.[\w-]+` |
-| `github-token` | GitHub PAT | `\bgh[pousr]_[A-Za-z0-9]{36,}\b` |
-| `slack-token` | Slack token | `\bxox[baprs]-[A-Za-z0-9-]{10,}` |
-| `generic-assignment` | `password=...`, `apiKey: ...` | key name matches `(?i)(pass(word)?\|secret\|token\|api[_-]?key\|credential)` and value entropy ≥ 3.5 |
-| `jdbc-password` | password in a JDBC URL | `jdbc:[^\s]*password=[^&\s]+` |
+| `private-key` | `-----BEGIN ... PRIVATE KEY-----` | CRITICAL |
+| `aws-access-key` | `AKIA`/`ASIA` + 16 | CRITICAL |
+| `github-token` | `ghp_`/`gho_`/... and `github_pat_` | CRITICAL |
+| `stripe-live-key` | `sk_live_` / `rk_live_` | CRITICAL |
+| `slack-token`, `slack-webhook` | `xox?-...`, hooks.slack.com | HIGH |
+| `google-api-key` | `AIza` + 35 | HIGH |
+| `jwt` | three base64url segments starting `eyJ` | HIGH |
+| `url-credentials`, `jdbc-password` | `scheme://user:pass@`, `;password=` | HIGH |
+| `generic-secret-assignment` | config `key=value` | HIGH |
+| `java-hardcoded-secret`, `spring-value-default-secret` | Java AST | HIGH |
 
-### AST pass (JavaParser)
-- `VariableDeclarator` / `FieldDeclaration` with a sensitive name and a `StringLiteralExpr` initializer.
-- `MethodCallExpr` like `setPassword("...")`, `withApiKey("...")`, `new BasicAWSCredentials("...", "...")` with literal args.
-- Ignore values that are placeholders: `${...}`, `changeme`, `<...>`, empty, or values shorter than 8 characters.
+Test files: LOW. Output: masked preview (`AKIA****LE`) and a fingerprint of the line with the secret masked out; the value itself is never stored, logged or written.
 
-Shannon entropy: `H = -Σ p(c)·log2 p(c)` over characters of the value.
+## 10. PII (`io.themis.pii`)
 
-Findings record the location and a **masked** value (`AKIA****WXYZ`); full secrets are never written to reports.
+`PiiVocabulary` matches whole tokens of camelCase/snake_case identifiers: email, phone/mobile/telephone/contact number, msisdn, aadhaar, PAN, date of birth/DOB, address, pincode/zip/postal code, passport, SSN, card number, account number, UPI/VPA, IFSC, CVV, GSTIN, voter id, driving licence, IP address, first/last/full name. Names containing metadata tokens (id, template, count, type, flag, verified, hash, encrypted, masked, dto, service...) are not PII (`emailTemplateId`, `emailVerifiedFlag`). `pii.extraFields` adds exact identifiers, `pii.ignoreFields` removes them.
 
-## 10. PII detection (`pii`)
+```mermaid
+flowchart TB
+    SRC[main .java files<br/>test sources skipped] --> PARSE[JavaParser, Java 21 level]
+    PARSE --> P1[Pass 1: types whose toString prints PII<br/>Lombok @Data / @ToString / @Value without Exclude or onlyExplicitlyIncluded,<br/>records, hand-written toString]
+    P1 --> F1[pii-tostring, MEDIUM]
+    P1 --> ENT[(PII-printing type names)]
+    PARSE --> P2[Pass 2: calls and constructors]
+    P2 --> LOG{logger or System.out/err call?}
+    LOG -->|argument names PII field / variable / getter| F2[pii-in-log, HIGH]
+    LOG -->|argument's declared type in ENT| F3[entity-in-log, HIGH]
+    P2 --> EXC{new ...Exception / ...Error<br/>with PII in the message?}
+    EXC --> F4[pii-in-exception, MEDIUM]
+    ENT -.-> F3
+```
 
-### PII vocabulary (configurable)
-`email, phone, mobile, msisdn, aadhaar, pan, dob, dateOfBirth, address, pincode, passport, ssn, cardNumber, upi, ifsc, accountNumber, firstName, lastName, fullName`
+Logger detection: receiver named `log`, `logger`, `*logger`, `*_log` with methods trace/debug/info/warn/error/fatal (and JUL levels). Entity types are resolved from parameters, local variables and fields of the enclosing method/class (simple names, no cross-file type solving).
 
-`PiiFieldMatcher` matches identifiers in camelCase / snake_case after normalization (`customerPhoneNo` -> tokens `customer, phone, no` -> hit `phone`).
+## 11. Privacy (`io.themis.privacy`)
 
-### Heuristics (Phase 6)
-| Rule | Pattern in AST | Severity |
-|---|---|---|
-| `pii-in-log` | `log.info/debug/warn/error(...)` where an argument is a PII field access, a PII getter (`getEmail()`), or a variable named like PII | HIGH |
-| `entity-in-log` | Logger argument whose type is a class containing PII fields (needs symbol solver) | MEDIUM |
-| `pii-tostring` | Class with PII fields annotated `@Data` / `@ToString` without `@ToString.Exclude` on them, or a hand-written `toString()` that concatenates them | MEDIUM |
-| `pii-in-exception` | `throw new XException("..." + email)` | MEDIUM |
-| `pii-in-response` | Controller method returning an entity with PII fields directly (no DTO) | LOW |
+`LookupPrivacy.of(PrivacyConfig, projectCoordinate)`:
+- private: the project's organisation group (first two groupId segments: `com.acme` covers `com.acme:*` and `com.acme.*`, not `com.acmex`), when `privacy.projectGroupPrivate` (default true);
+- private: `-SNAPSHOT` and timestamped snapshot versions (`-20230310.055002-1`);
+- private: `privacy.privateArtifacts` patterns;
+- everything else may be sent.
 
-Logger detection: receiver named `log`/`logger`/`LOG` or of type `org.slf4j.Logger`, `java.util.logging.Logger`, `org.apache.logging.log4j.Logger`; also `System.out.println`.
+Applies to deps.dev license lookups, OSV queries, deps.dev version lists and Central jar downloads. HTTP clients: HTTPS only (loopback allowed for tests), redirects never followed, no cookies or credentials, headers limited to the Themis client name, `Accept`, `Content-Type`; `HTTPS_PROXY` and JVM proxy properties honoured.
 
-## 11. Suppressions (`suppress`)
+## 12. Suppressions and baseline (`io.themis.suppress`)
 
-Three mechanisms:
-1. Annotation in code: `@SuppressScan("pii-in-log")` on a method/class, or comment `// themis:ignore secret` on the line.
-2. Config:
-   ```yaml
-   suppress:
-     - id: "VULN:GHSA-xxxx-xxxx:com.fasterxml.jackson.core:jackson-databind"
-       reason: "Not reachable: we do not deserialize untrusted input"
-       until: 2027-01-31
-   ```
-3. Baseline: `themis baseline` writes `.themis-baseline.json` with the fingerprints of current findings; later scans report only new ones.
+```mermaid
+flowchart LR
+    R[ScanReport findings] --> S{suppress: entry matches id?<br/>exact or * pattern, not expired}
+    S -->|yes| SUP1["suppressed (reason)"]
+    S -->|no| B{id in baseline?}
+    B -->|yes| SUP2[suppressed: baseline]
+    B -->|no| KEEP[reported, counts for exit code]
+    EXP[expired entries] --> W[warning: reported again]
+    UNUSED[entries matching nothing] --> W2[warning: remove it]
+```
 
-Fingerprint (`Finding.id`): `TYPE:ruleOrAdvisoryId:ga[:file:normalizedLineContentHash]`. Line *content* hash rather than line *number*, so unrelated edits do not invalidate suppressions.
+- `.themis.yml`: `suppress: [{id, reason (required), until (date, optional)}]`.
+- `themis baseline [DIR] [--file F]` writes `.themis-baseline.json` (`schemaVersion`, `createdAt`, `tool`, `project`, sorted `findings[{id, severity, title}]`). `scan` applies it by default (`--baseline F`, `--no-baseline`).
+- Suppressed findings remain in JSON (`suppressed[]`) and HTML (Suppressed tab).
 
-## 12. Configuration (`.themis.yml`)
+## 13. Configuration (`.themis.yml`)
 
 ```yaml
-javaRelease: 17                 # override autodetection
+javaRelease: 17                      # override detection
 analyzers: [licenses, vulns, javaversion, upgrade, secrets, pii]
-scopes: [compile, runtime]
 failOn:
-  severity: HIGH                # exit 1 if any finding >= HIGH
+  severity: HIGH                     # exit 1 at or above
 licenses:
-  deny: [NETWORK_COPYLEFT]
-  warn: [STRONG_COPYLEFT, UNKNOWN]
+  severity: {NETWORK_COPYLEFT: HIGH, STRONG_COPYLEFT: LOW, WEAK_COPYLEFT: NONE}
   overrides:
-    "com.example:legacy-lib": "Apache-2.0"
-secrets:
-  exclude: ["src/test/**"]
-pii:
-  extraFields: [customerId]
+    "com.acme*": "LicenseRef-Acme-Proprietary"
+  allowArtifacts: ["com.mysql:*"]
 network:
   offline: false
   cacheTtlHours: 24
+privacy:
+  privateArtifacts: ["io.vendor.internal:*"]
+  projectGroupPrivate: true
+secrets:
+  exclude: ["legacy/**"]
+pii:
+  exclude: ["generated/**"]
+  extraFields: [customerId]
+  ignoreFields: [maskedPhone]
+report:
+  consoleLimit: 25
+  open: true
+suppress:
+  - id: "VULNERABILITY:GHSA-*:com.mysql:*"
+    reason: "Driver only used by an internal batch job"
+    until: 2027-03-31
 ```
 
-Precedence: CLI flags > `.themis.yml` in the project > built-in defaults.
+Precedence: CLI flags > `--config FILE` or the project's `.themis.yml` > defaults. Unknown keys, bad severities, negative TTLs and suppressions without a reason are errors (exit 2) naming the key and line.
 
-## 13. CLI (`themis-cli`)
+## 14. CLI (`themis-cli`)
 
 ```
-themis scan [DIR]
-    --format=console,json,html,sarif   (default console,html)
-    --output=DIR                       (default ./themis-report)
-    --only=licenses,vulns,...
-    --fail-on=LOW|MEDIUM|HIGH|CRITICAL|NONE
-    --java-release=N
-    --offline | --no-network
-    --include-test
-    --config=FILE
-themis deps [DIR]                      (resolved list: coordinate, scope, direct/transitive, "in <modules>", "via <path>")
-    --include-test
-    --offline
-Resolver flags (scan and deps):
-    -s, --settings=FILE                Maven user settings (default ~/.m2/settings.xml)
-    --ignore-pom-repositories          use only settings mirrors/profile repositories + Central (see 4, Security)
-themis baseline [DIR]
-themis version
+themis scan [DIR]       --format console,json,html,sarif  --output DIR  --only a,b  --fail-on SEVERITY
+                        --console-limit N  --no-open  --baseline FILE  --no-baseline
+                        --java-release N  --offline  --include-test  --lenient  --config FILE
+                        -s/--settings FILE  --ignore-pom-repositories
+themis deps [DIR]       --include-test --offline --lenient -s --ignore-pom-repositories
+themis licenses [DIR]   --include-test --offline --lenient --config --console-limit --no-open --output
+themis vulns [DIR]      (same as licenses)
+themis baseline [DIR]   --file FILE --only --include-test --offline --lenient --config
+themis --version | help
 ```
 
-Exit codes: `0` no findings at or above `--fail-on`; `1` findings above threshold; `2` usage/config/resolution error.
+Exit codes: `0` no reported finding at or above `--fail-on` (default HIGH, or `failOn.severity`); `1` findings at or above it; `2` usage, configuration or resolution error. Environment: `THEMIS_GRADLE_JAVA_HOME`, `-Dthemis.cache.dir`, `HTTPS_PROXY`.
 
-Resolution warnings (missing/invalid transitive POMs, undecryptable passwords) are printed to stderr as `warning: ...` by `scan` and `deps`; stdout stays parseable. Output is locale-independent (`Locale.ROOT`). Tests construct the CLI with `ThemisCli.newCommandLine(ResolverOptions)`; `main` passes `ResolverOptions.defaults()`.
+Console limit: when `scan` findings (or `vulns`/`licenses` rows) exceed `report.consoleLimit` (default 25, `--console-limit`), the console shows the summary only and `report.html` is written and opened (interactive terminals only; never when `CI` is set or with `--no-open`).
 
-## 14. Report JSON shape (v1)
+## 15. Reports (`io.themis.report`)
 
-```json
-{
-  "schemaVersion": 1,
-  "tool": {"name": "themis", "version": "0.1.0"},
-  "project": {"coordinate": "com.acme:order-svc:1.4.0", "javaRelease": 17},
-  "summary": {"dependencies": 243, "direct": 31,
-              "bySeverity": {"CRITICAL": 1, "HIGH": 4, "MEDIUM": 9, "LOW": 3}},
-  "dependencies": [
-    {"coordinate": "org.yaml:snakeyaml:1.33", "scope": "COMPILE", "direct": false,
-     "path": ["com.acme:order-svc:1.4.0", "org.springframework.boot:spring-boot-starter:3.0.0", "org.yaml:snakeyaml:1.33"],
-     "license": {"spdx": ["Apache-2.0"], "category": "PERMISSIVE", "source": "pom"},
-     "requiredJavaRelease": 7, "modules": ["com.acme:order-svc:1.4.0"]}
-  ],
-  "warnings": ["The POM for com.example:legacy:jar:1.0 is missing, no dependency information available"],
-  "findings": [
-    {"id": "VULNERABILITY:GHSA-mjmj-j48q-9wg2:org.yaml:snakeyaml", "type": "VULNERABILITY",
-     "severity": "HIGH", "title": "SnakeYaml constructor deserialization RCE",
-     "dependency": "org.yaml:snakeyaml:1.33",
-     "evidence": {"aliases": "CVE-2022-1471", "fixed": "2.0"},
-     "upgrade": {"recommended": "2.0", "requiredJavaRelease": 8, "sameMajor": false,
-                 "bumpDirect": "org.springframework.boot:spring-boot-starter"}}
-  ],
-  "errors": []
-}
-```
+| Writer | File | Notes |
+|---|---|---|
+| `JsonReportWriter` | `report.json` | `schemaVersion: 1`, tool, project, summary, dependencies (with license), findings, errors, warnings, suppressed |
+| `HtmlReportWriter` | `report.html` | template `report.html`; data embedded as script-safe JSON (`< > &` and line separators escaped); DOM text nodes only; links only for `https://`; CSP `default-src 'none'`; home directory shown as `~` |
+| `SarifReportWriter` | `themis.sarif` | SARIF 2.1.0 (validated against the OASIS schema); rule ids: advisory id, `license/<category>`, `secret/<rule>`, `pii/<rule>`, `java-version`, `upgrade`; levels error/warning/note; `security-severity` (CVSS when known); dependency findings located at the declaring line of pom.xml / build.gradle[.kts] (transitive: the direct dependency's line); `partialFingerprints.themisFindingId/v1` |
 
-## 15. Caching (`cache`)
+## 16. Caching (`io.themis.cache`)
 
-`~/.themis/cache/{namespace}/{sha256(key)}.json` with `{storedAt, value}`.
+`~/.themis/cache/<namespace>/<sha256(key)>.json` = `{storedAt, key, value}`; directories `rwx------`, files `rw-------`; atomic writes.
 
 | Namespace | Key | TTL |
 |---|---|---|
-| `osv-query` | `g:a:v` | 24 h |
+| `license` | `g:a:v` (deps.dev licenses) | 30 days |
+| `osv-query` | `g:a:v` (advisory ids) | 24 h |
 | `osv-vuln` | advisory id | 24 h |
-| `license` | `g:a:v` | 30 days |
-| `metadata` | `g:a` (version list) | 24 h |
-| `javaversion` | `g:a:v` | forever (released jars are immutable) |
+| `upgrade-versions` | `g:a` | 24 h |
+| `javaversion` | `g:a:v` (release of a candidate jar) | 10 years (released jars are immutable) |
 
-## 16. Testing strategy
+`network.cacheTtlHours` overrides the TTLs; `--offline` reads the cache only.
+
+## 17. Testing strategy
 
 | Level | What |
 |---|---|
-| Unit | `ClassFileVersion` on generated class bytes, `SpdxNormalizer` alias table, `LicenseClassifier`, entropy, each secret regex (positive + negative cases), `PiiFieldMatcher` tokenization |
-| Component | Analyzers against fixture projects in `src/test/resources/fixtures/*` (a POM with an AGPL dep, a class with a hardcoded AWS key, an entity with `@Data` + phone) |
-| Contract | `OsvClient` against recorded responses (WireMock), so tests run offline |
-| End-to-end | CLI on a sample Spring Boot repo; assert JSON report and exit code |
-
-## 17. Phase 1 implementation checklist
-
-- [x] Multi-module Maven skeleton, Java 17
-- [x] Domain model records
-- [x] `Analyzer` / `DependencyResolver` / `ReportWriter` interfaces
-- [x] `ScanEngine` with stage ordering and per-analyzer error isolation
-- [x] `LicenseClassifier` + `ClassFileVersion` (pure logic, unit-tested)
-- [x] CLI `scan` / `version` commands, console + JSON output
-- [x] `MavenDependencyResolver` using Maven Resolver 1.9 + Maven 3.9 model builder (effective POM, settings incl. profiles, multi-module reactor with two-phase model building, CI-friendly versions)
-- [x] `DependencyResolver.open` / `ProjectSession`: one resolver session and one model build per scan, shared by project facts and resolution
-- [x] Classifier/extension in `Coordinate`; one entry per artifact+version; `modules` and widest scope across modules
-- [x] Scopes compile, runtime, provided, system by default; test opt-in
-- [x] Warnings for missing/invalid transitive POMs and undecryptable passwords (`DependencyGraph.warnings`, stderr, report.json)
-- [x] Security: always-on `external:http:*` blocker, `--ignore-pom-repositories`, DOCTYPE rejection (section 4)
-- [x] CLI `deps` command; `--settings` / `--ignore-pom-repositories` on `scan` and `deps`; locale-independent output
-- [x] Fixture repository/projects for component tests (`FixtureRepo`); hermetic CLI tests via `ThemisCli.newCommandLine(ResolverOptions)`; network IT tagged `network`
-- [x] Shaded jar: merged Apache NOTICE, single Apache LICENSE
-- [ ] `mvn dependency:tree` fallback (deferred, see section 4)
-
-## 18. Phase 2 status (licenses): done
-
-- `SpdxNormalizer` (bundled `aliases.tsv` + SPDX id list), `LicenseLookup` chain: config override -> effective POM (`pom` / `parent-pom`) -> deps.dev (cached 30 days in `~/.themis/cache`, skipped when `--offline`) -> license text inside the jar -> `UNKNOWN`. Multiple `<license>` entries are combined with `OR`.
-- `LicenseAnalyzer` with default severities: NETWORK_COPYLEFT and STRONG_COPYLEFT = HIGH, PROPRIETARY = MEDIUM, UNKNOWN = LOW, WEAK_COPYLEFT = INFO. Test scope is capped at INFO; provided/system are lowered one level.
-- `.themis.yml`: `licenses.severity` (category -> severity or NONE), `licenses.overrides`, `licenses.allowArtifacts`, `failOn.severity`, `network.offline`, `network.cacheTtlHours`, `analyzers`, `javaRelease`. Unknown keys fail with exit 2. Precedence: CLI flags > `--config FILE` or project `.themis.yml` > defaults.
-- CLI: `themis licenses [DIR]`, `scan` prints a `Licenses :` summary, `--config`, locale-independent `--fail-on`. JSON report: `license {spdx, category, source}` per dependency.
-- Verified on real projects: Spring Boot sample, `/tmp/rev/edge` (23/23 detected) and a copyleft mix (iText AGPL, MySQL GPL + FOSS exception, logback/H2/Jakarta dual licenses): 12/12 detected and classified correctly.
-
-## 19. Gradle support: done
-
-- `AutoDetectingResolver` picks Maven when `pom.xml` exists, else Gradle (`settings.gradle[.kts]` / `build.gradle[.kts]`).
-- `GradleDependencyResolver` runs the project's own Gradle (`sh ./gradlew`, else `gradle` on PATH) with the bundled `themis-init.gradle`, which registers `themisDependencies` and writes JSON: per project, the resolved `compileClasspath`, `runtimeClasspath` (and `testRuntimeClasspath` with `--include-test`), jar paths from Gradle's cache, POM `<licenses>` (walking up to 5 parent POMs through Gradle), unresolved dependencies. It only resolves configurations; nothing is compiled.
-- Scope mapping: compile+runtime -> COMPILE, runtime only -> RUNTIME, compileOnly -> PROVIDED, test only -> TEST. Subprojects merge like Maven modules; sibling projects and platforms/BOMs are never reported.
-- Uses Gradle's own resolution, repositories and credentials (`~/.gradle/gradle.properties`), so it matches `./gradlew dependencies`.
-- Trust: it executes the project's build scripts.
-- Verified with Gradle 6.9.1 (Spring Boot 2.4, JDK 11), 7.6.1 (Spring Boot 3.0 multi-project, JDK 17) and 8.14 (tests).
-
-## 20. Phase 3 status (vulnerabilities): done
-
-- `VulnerabilityAnalyzer` (`vulns`): one batched `POST /v1/querybatch` to OSV, then `GET /v1/vulns/{id}` per advisory (8 in parallel), both cached 24 h. Withdrawn advisories ignored. Severity: CVSS v3 base score computed from the vector (`Cvss`), else the database rating (GHSA `MODERATE` = MEDIUM), else MEDIUM. Test-scope findings capped at LOW. `fixedIn` per advisory = nearest fixed version above the current one (Maven `ComparableVersion`); per dependency = the version that fixes all of them.
-- OSV unreachable = analyzer error (reported), never a silent "no vulnerabilities".
-- CLI: `themis vulns [DIR]`; `scan` prints a `Vulnerable :` summary.
-
-### Privacy / data-leak guarantees (OSV and deps.dev)
-
-- Only `group:artifact` + version of *public* packages is sent, over HTTPS (plain HTTP only to loopback, for tests); redirects are never followed; the only headers are a fixed Themis client name, `Accept` and `Content-Type`; no cookies or credentials; no paths, project names, hostnames or user data.
-- Never sent (`LookupPrivacy`): the project's own organisation group (first two groupId segments, e.g. `com.acme:*` and `com.acme.*`), `-SNAPSHOT` and timestamped snapshot versions, and `privacy.privateArtifacts` patterns. Applies to deps.dev license lookups as well (this closed a Phase 2 leak of internal coordinates).
-- `.themis.yml`: `privacy: { privateArtifacts: ["io.vendor.internal:*"], projectGroupPrivate: true }`.
-- The cache (`~/.themis/cache`) is owner-only (`rwx------`, files `rw-------`). `--offline` sends nothing.
-- Tests assert on everything a stub server receives (paths, headers, bodies).
-
-## 21. Phase 4 status (upgrade advisor): done
-
-- `UpgradeAdvisor` (`upgrade`, ADVISOR stage) reads `DependencyVulnerabilities` and, per vulnerable dependency: newer stable versions from deps.dev (pre-releases and snapshots dropped), up to 300 candidates checked against OSV in one batch, then the lowest clean candidate whose jar bytecode (fetched from Maven Central into a temp file, deleted after reading; only the Java release is cached) runs on the project's Java release.
-- Output: `UpgradeSuggestion` + an UPGRADE finding (INFO when a safe upgrade exists; MEDIUM when the fix needs a newer Java; LOW when no clean version exists). Transitive dependencies name the direct dependency to bump or the override to add.
-- Same privacy rules as Phase 3; `--offline` uses cached answers only.
-
-## 22. HTML report
-
-- `HtmlReportWriter` writes one self-contained `report.html`: summary cards plus searchable, sortable, filterable tables (Findings, Vulnerabilities, Upgrades, Licenses, Dependencies, Warnings) with an expandable detail row.
-- Safe by construction: data embedded as script-safe JSON, rendered via DOM text nodes only (no `innerHTML`), links only for `https://`, a CSP forbidding any network access, no external CSS/JS/fonts, home directory shown as `~` in jar paths.
-- CLI: when `scan` findings (or `vulns`/`licenses` rows) exceed `report.consoleLimit` (default 25; `--console-limit N`), the console shows the summary only and the HTML report is written to `--output` (default `themis-report/`) and opened in the browser when interactive (not in CI; `--no-open` / `report.open: false`). `--format html` always writes it.
-
-## 23. Phases 5-6 status (secrets, PII): done
-
-- Source-only scans (`--only secrets,pii`) skip dependency resolution entirely: no Maven/Gradle run, no network.
-- `SourceFiles` walks the project, skipping build output, VCS/IDE folders, `node_modules`, files over 1 MB and `secrets.exclude` / `pii.exclude` globs. Test sources: secrets reported at LOW, PII skipped. `themis:ignore` on a line (or a comment line above) suppresses it.
-- `SecretAnalyzer` (`secrets`): known formats (private keys, AWS, GitHub, Stripe live, Slack token/webhook, Google API key, JWT, credentials in URLs, JDBC `password=`), then config-file assignments with secret-like keys (`password`, `token`, `api-key`, `client-secret`...) whose value passes a placeholder/entropy check (`${...}`, `$VAR`, `{{...}}`, `ENC(...)`, `changeme`... are not secrets). Java via JavaParser: secret-named constants, `setPassword("...")`-style calls, Spring `@Value("${x.password:default}")`. Values are never stored: findings carry a masked preview and a fingerprint of the line with the secret masked out.
-- `PiiAnalyzer` (`pii`): vocabulary on whole identifier tokens (email, phone/mobile/telephone, aadhaar, PAN, DOB, address, pincode, passport, card/account number, UPI/VPA, IFSC, CVV, GSTIN, names...), ignoring metadata names (`emailTemplateId`, `addressCount`, `emailVerifiedFlag`). Rules: `pii-in-log` and `entity-in-log` (HIGH), `pii-tostring` for Lombok `@Data`/`@ToString`/`@Value`, records and hand-written `toString()` (MEDIUM, honours `@ToString.Exclude` and `onlyExplicitlyIncluded`), `pii-in-exception` (MEDIUM). `pii.extraFields` / `pii.ignoreFields` tune it.
-- HTML report: "Secrets & PII" tab with file:line, rule and masked value.
-
-## 24. Suppressions, baseline, SARIF: done
-
-- `.themis.yml` `suppress:` entries: `id` (exact finding id or `*` pattern), mandatory `reason`, optional `until` date. Suppressed findings move to `ScanReport.suppressed()` (kept in JSON/HTML reports, never counted for the exit code). Expired entries stop applying and warn; entries matching nothing warn ("remove it").
-- `themis baseline [DIR]` writes `.themis-baseline.json` (ids, severities, titles; no secret values; sorted for clean diffs). `scan` hides baselined findings by default (`--baseline FILE`, `--no-baseline`). Finding ids are stable: license ids are `LICENSE:<category>:g:a` (no version), secrets use a fingerprint of the line with the secret masked out.
-- `--format sarif` writes `themis.sarif` (SARIF 2.1.0, validated against the OASIS schema): secrets/PII at file:line:column; dependency findings at the dependency's line in pom.xml / build.gradle[.kts] (transitive: the direct dependency's line); levels error/warning/note; `security-severity` (CVSS when known) for GitHub's severity display; `partialFingerprints` from the finding id.
+| Unit | SPDX normalization and classification, CVSS scores, class-file versions, PII vocabulary, privacy rules, Gradle JDK matrix, suppression matching, config parsing (incl. tr-TR locale) |
+| Component | Maven resolver against an on-disk fixture repository (mediation, BOMs, scopes, classifiers, multi-module, `${revision}`, settings, offline); Gradle resolver against a real local Gradle with fixture repos; analyzers with stub HTTP servers |
+| Privacy | Stub servers record every path, header and body: tests assert no internal coordinates, snapshots, paths or project names are sent |
+| Report safety | HTML: no external resources, CSP present, hostile advisory text stays inert; SARIF validated |
+| CLI | Hermetic `Environment` (fixture settings, temp cache, stub APIs): commands, exit codes, config precedence, baseline flow |
+| Network (opt-in) | `-Pnetwork`: real Maven Central resolution |
+| Manual | Real services (Maven and Gradle 6.9 / 7.6 / 8.x), Spring PetClinic, deliberately vulnerable samples (Log4Shell, snakeyaml, jackson) |
