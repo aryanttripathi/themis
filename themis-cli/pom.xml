@@ -5,7 +5,7 @@
     <modelVersion>4.0.0</modelVersion>
 
     <parent>
-        <groupId>io.themis</groupId>
+        <groupId>io.github.aryanttripathi</groupId>
         <artifactId>themis-parent</artifactId>
         <version>0.1.0-SNAPSHOT</version>
     </parent>
@@ -16,7 +16,7 @@
 
     <dependencies>
         <dependency>
-            <groupId>io.themis</groupId>
+            <groupId>io.github.aryanttripathi</groupId>
             <artifactId>themis-core</artifactId>
         </dependency>
         <dependency>
@@ -30,7 +30,7 @@
             <scope>runtime</scope>
         </dependency>
         <dependency>
-            <groupId>io.themis</groupId>
+            <groupId>io.github.aryanttripathi</groupId>
             <artifactId>themis-core</artifactId>
             <type>test-jar</type>
             <scope>test</scope>
