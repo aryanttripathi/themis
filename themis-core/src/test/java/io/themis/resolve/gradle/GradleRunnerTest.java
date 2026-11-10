@@ -21,7 +21,7 @@ class GradleRunnerTest {
 
         assertThat(summary).contains("Could not compile build file").contains("Unsupported class file major version 61")
                 .doesNotContain("frame59").doesNotContain("* Try:");
-        assertThat(summary).contains("hint:").contains("JAVA_HOME");
+        assertThat(summary).contains("hint:").contains("THEMIS_GRADLE_JAVA_HOME");
     }
 
     @Test

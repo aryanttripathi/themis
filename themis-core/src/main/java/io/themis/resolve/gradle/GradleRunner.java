@@ -11,6 +11,7 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Optional;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Stream;
 
@@ -48,6 +49,9 @@ final class GradleRunner {
             ProcessBuilder pb = new ProcessBuilder(cmd).directory(projectDir.toFile())
                     .redirectErrorStream(true).redirectOutput(log.toFile());
             options.userHome().ifPresent(h -> pb.environment().put("GRADLE_USER_HOME", h.toString()));
+            Optional<String> gradleVersion = GradleJdk.wrapperVersion(projectDir);
+            Optional<Path> javaHome = gradleJavaHome(gradleVersion);
+            javaHome.ifPresent(h -> pb.environment().put("JAVA_HOME", h.toString()));
             Process process = pb.start();
             process.getOutputStream().close();
             if (!process.waitFor(options.timeout().toMillis(), TimeUnit.MILLISECONDS)) {
@@ -60,7 +64,14 @@ final class GradleRunner {
                 throw new ResolutionException("Gradle failed (exit " + process.exitValue() + ") in " + projectDir
                         + ":\n" + summarize(readLines(log)), List.of(), null);
             }
-            return JSON.readValue(output.toFile(), GradleDump.class);
+            GradleDump dump = JSON.readValue(output.toFile(), GradleDump.class);
+            if (javaHome.isPresent() && System.getenv("THEMIS_GRADLE_JAVA_HOME") == null) {
+                List<String> warnings = new ArrayList<>(dump.warnings());
+                warnings.add(0, "Gradle " + gradleVersion.orElse("?") + " does not run on JDK " + Runtime.version().feature()
+                        + "; ran it with JAVA_HOME=" + javaHome.get() + " (override with THEMIS_GRADLE_JAVA_HOME)");
+                dump = new GradleDump(dump.root(), dump.projects(), dump.unresolved(), dump.licenses(), warnings);
+            }
+            return dump;
         } catch (IOException e) {
             throw new ResolutionException("Cannot run Gradle in " + projectDir + ": " + e.getMessage(), List.of(), e);
         } catch (InterruptedException e) {
@@ -69,6 +80,13 @@ final class GradleRunner {
         } finally {
             deleteQuietly(work);
         }
+    }
+
+    /** THEMIS_GRADLE_JAVA_HOME, else an installed JDK the project's Gradle supports if ours is too new. */
+    private static Optional<Path> gradleJavaHome(Optional<String> gradleVersion) {
+        String explicit = System.getenv("THEMIS_GRADLE_JAVA_HOME");
+        if (explicit != null && !explicit.isBlank()) return Optional.of(Path.of(explicit));
+        return GradleJdk.choose(gradleVersion, Runtime.version().feature(), GradleJdk::macJavaHome);
     }
 
     /** Explicit command, else the project's wrapper (run via sh: the exec bit is often lost), else gradle on PATH. */
@@ -109,7 +127,7 @@ final class GradleRunner {
         String all = String.join("\n", log);
         if (all.contains("Unsupported class file major version") || all.contains("Unsupported Java")) {
             text += "\nhint: this Gradle version cannot run on the current JDK. Point JAVA_HOME at a JDK it supports, e.g. "
-                    + "JAVA_HOME=$(/usr/libexec/java_home -v 11) themis scan .  (Gradle 6.x: JDK <= 16, 7.0-7.2: <= 16, 7.3-7.5: <= 18, 7.6: <= 19)";
+                    + "THEMIS_GRADLE_JAVA_HOME=$(/usr/libexec/java_home -v 11) themis scan .  (Gradle 6.x: JDK <= 16, 7.0-7.2: <= 16, 7.3-7.5: <= 18, 7.6: <= 19)";
         }
         return text;
     }
