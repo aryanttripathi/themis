@@ -401,6 +401,18 @@ class MavenDependencyResolverTest {
 
     // ---------------------------------------------------------------------------------------
 
+    @Test
+    void lenientModeReportsUnresolvableArtifactsAsWarningsAndKeepsTheRest() {
+        repo.publish("com.acme:ok:1.0", "jar", "");
+        Path app = repo.project(tmp.resolve("app"), "com.acme:app:1.0",
+                deps("com.acme:ok:1.0", "com.acme:missing:9.9"));
+
+        DependencyGraph graph = resolve(app, DEFAULTS.withLenient(true));
+
+        assertThat(graph.dependencies()).extracting(d -> d.coordinate().toString()).contains("com.acme:ok:1.0");
+        assertThat(graph.warnings()).anySatisfy(w -> assertThat(w).contains("com.acme:missing:jar:9.9"));
+    }
+
     private DependencyGraph resolve(Path projectDir, ScanConfig config) {
         return resolve(options, projectDir, config);
     }

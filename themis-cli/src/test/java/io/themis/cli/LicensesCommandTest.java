@@ -150,6 +150,27 @@ class LicensesCommandTest {
                 + "\"spdx\" : \"AGPL-3.0-only\",\\s*\"category\" : \"NETWORK_COPYLEFT\",\\s*\"source\" : \"pom\"");
     }
 
+    @Test
+    void lenientScanWarnsAboutUnresolvableDependenciesAndScansTheRest() {
+        Path broken = repo.project(tmp.resolve("broken"), "com.acme:broken:1.0", deps("com.acme:mit-lib:1.0", "com.acme:gone:1.0"));
+
+        assertThat(cli.run("scan", broken.toString())).isEqualTo(ThemisCli.EXIT_ERROR);
+        int exit = cli.run("scan", broken.toString(), "--lenient");
+
+        assertThat(exit).isEqualTo(ThemisCli.EXIT_OK);
+        assertThat(cli.out()).contains("Dependencies : 2"); // the missing one is still known by coordinate (no jar)
+        assertThat(cli.err()).contains("warning: ").contains("com.acme:gone:jar:1.0");
+    }
+
+    @Test
+    void wildcardOverrideCoversAWholeGroup() throws Exception {
+        Files.writeString(app.resolve(".themis.yml"), "licenses:\n  overrides:\n    \"com.acme:my*\": \"LicenseRef-Acme\"\n");
+
+        cli.run("licenses", app.toString());
+
+        assertThat(cli.out()).containsPattern("com\\.acme:mystery:1\\.0\\s+compile\\s+LicenseRef-Acme\\s+PROPRIETARY\\s+config");
+    }
+
     private static String licenses(String name) {
         return "<licenses><license><name>" + name + "</name></license></licenses>";
     }

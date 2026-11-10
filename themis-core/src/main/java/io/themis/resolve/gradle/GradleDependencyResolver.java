@@ -38,6 +38,6 @@ public final class GradleDependencyResolver implements DependencyResolver {
     public ProjectSession open(Path projectDir, ScanConfig config) {
         Path root = projectDir.toAbsolutePath().normalize();
         GradleDump dump = new GradleRunner(options).dump(root, config.includeTestScope(), config.offline());
-        return new GradleProjectSession(root, dump, config.includeTestScope());
+        return new GradleProjectSession(root, dump, config.includeTestScope(), config.lenient());
     }
 }

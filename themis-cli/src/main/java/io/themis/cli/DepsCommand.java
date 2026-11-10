@@ -48,12 +48,15 @@ final class DepsCommand implements Callable<Integer> {
     @Option(names = "--offline", description = "Resolve from the local repository only.")
     boolean offline;
 
+    @Option(names = "--lenient", description = "Report unresolvable dependencies as warnings and list the rest.")
+    boolean lenient;
+
     @Mixin
     ResolverMixin resolver;
 
     @Override
     public Integer call() {
-        ScanConfig config = new ScanConfig(Set.of(), Severity.HIGH, OptionalInt.empty(), offline, includeTest);
+        ScanConfig config = new ScanConfig(Set.of(), Severity.HIGH, OptionalInt.empty(), offline, includeTest).withLenient(lenient);
         DependencyGraph graph = Themis.resolve(projectDir, config, parent.environment().withResolver(resolver.apply(parent.environment().resolver())));
         print(graph, spec.commandLine().getOut());
         printWarnings(graph, spec.commandLine().getErr());

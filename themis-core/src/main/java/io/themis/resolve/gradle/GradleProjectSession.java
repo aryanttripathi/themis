@@ -44,11 +44,17 @@ final class GradleProjectSession implements ProjectSession {
     private final DependencyGraph graph;
     private final Map<String, PomLicenses> licenses = new LinkedHashMap<>();
 
-    GradleProjectSession(Path root, GradleDump dump, boolean includeTest) {
-        failOnUnresolved(dump, includeTest);
+    GradleProjectSession(Path root, GradleDump dump, boolean includeTest, boolean lenient) {
+        List<String> warnings = new ArrayList<>(dump.warnings());
+        try {
+            failOnUnresolved(dump, includeTest);
+        } catch (ResolutionException e) {
+            if (!lenient) throw e;
+            warnings.add(e.getMessage() + " (continuing: --lenient)");
+        }
         Coordinate rootCoordinate = coordinate(dump.root().gav());
         this.project = projectInfo(root, rootCoordinate, dump);
-        this.graph = new DependencyGraph(rootCoordinate, merge(dump, includeTest), dump.warnings());
+        this.graph = new DependencyGraph(rootCoordinate, merge(dump, includeTest), warnings);
         dump.licenses().forEach((gav, pom) -> licenses.put(gav, new PomLicenses(
                 pom.licenses().stream().map(l -> new DeclaredLicense(l.name(), l.url())).toList(),
                 pom.inherited(), Optional.ofNullable(pom.problem()))));

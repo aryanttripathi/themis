@@ -16,6 +16,7 @@ import java.util.Set;
  * @param offline          no network: Maven offline mode, and deps.dev answers only from the cache
  * @param licenses         license policy
  * @param cacheTtlHours    overrides the per-namespace TTL of cached network answers (license: 30 days)
+ * @param lenient          unresolvable dependencies become warnings instead of failing the scan
  */
 public record ScanConfig(
         Set<String> enabledAnalyzers,
@@ -24,7 +25,8 @@ public record ScanConfig(
         boolean offline,
         boolean includeTestScope,
         LicensePolicy licenses,
-        OptionalInt cacheTtlHours) {
+        OptionalInt cacheTtlHours,
+        boolean lenient) {
 
     public ScanConfig {
         enabledAnalyzers = Set.copyOf(enabledAnalyzers);
@@ -36,7 +38,7 @@ public record ScanConfig(
     /** Default license policy and cache TTLs. */
     public ScanConfig(Set<String> enabledAnalyzers, Severity failOn, OptionalInt javaRelease,
                       boolean offline, boolean includeTestScope) {
-        this(enabledAnalyzers, failOn, javaRelease, offline, includeTestScope, LicensePolicy.defaults(), OptionalInt.empty());
+        this(enabledAnalyzers, failOn, javaRelease, offline, includeTestScope, LicensePolicy.defaults(), OptionalInt.empty(), false);
     }
 
     public static ScanConfig defaults() {
@@ -48,30 +50,34 @@ public record ScanConfig(
     }
 
     public ScanConfig withEnabledAnalyzers(Set<String> analyzers) {
-        return new ScanConfig(analyzers, failOn, javaRelease, offline, includeTestScope, licenses, cacheTtlHours);
+        return new ScanConfig(analyzers, failOn, javaRelease, offline, includeTestScope, licenses, cacheTtlHours, lenient);
     }
 
     public ScanConfig withFailOn(Severity severity) {
-        return new ScanConfig(enabledAnalyzers, severity, javaRelease, offline, includeTestScope, licenses, cacheTtlHours);
+        return new ScanConfig(enabledAnalyzers, severity, javaRelease, offline, includeTestScope, licenses, cacheTtlHours, lenient);
     }
 
     public ScanConfig withJavaRelease(OptionalInt release) {
-        return new ScanConfig(enabledAnalyzers, failOn, release, offline, includeTestScope, licenses, cacheTtlHours);
+        return new ScanConfig(enabledAnalyzers, failOn, release, offline, includeTestScope, licenses, cacheTtlHours, lenient);
     }
 
     public ScanConfig withOffline(boolean value) {
-        return new ScanConfig(enabledAnalyzers, failOn, javaRelease, value, includeTestScope, licenses, cacheTtlHours);
+        return new ScanConfig(enabledAnalyzers, failOn, javaRelease, value, includeTestScope, licenses, cacheTtlHours, lenient);
     }
 
     public ScanConfig withIncludeTestScope(boolean value) {
-        return new ScanConfig(enabledAnalyzers, failOn, javaRelease, offline, value, licenses, cacheTtlHours);
+        return new ScanConfig(enabledAnalyzers, failOn, javaRelease, offline, value, licenses, cacheTtlHours, lenient);
     }
 
     public ScanConfig withLicensePolicy(LicensePolicy policy) {
-        return new ScanConfig(enabledAnalyzers, failOn, javaRelease, offline, includeTestScope, policy, cacheTtlHours);
+        return new ScanConfig(enabledAnalyzers, failOn, javaRelease, offline, includeTestScope, policy, cacheTtlHours, lenient);
+    }
+
+    public ScanConfig withLenient(boolean value) {
+        return new ScanConfig(enabledAnalyzers, failOn, javaRelease, offline, includeTestScope, licenses, cacheTtlHours, value);
     }
 
     public ScanConfig withCacheTtlHours(OptionalInt hours) {
-        return new ScanConfig(enabledAnalyzers, failOn, javaRelease, offline, includeTestScope, licenses, hours);
+        return new ScanConfig(enabledAnalyzers, failOn, javaRelease, offline, includeTestScope, licenses, hours, lenient);
     }
 }

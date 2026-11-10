@@ -55,8 +55,34 @@ public record LicensePolicy(Map<LicenseCategory, Severity> severities, Map<Strin
         });
     }
 
+    /** Exact {@code g:a} or a {@code *} pattern, e.g. {@code com.mysql:*}. */
     public boolean isAllowed(String ga) {
-        return allowArtifacts.contains(ga);
+        return allowArtifacts.contains(ga) || allowArtifacts.stream().anyMatch(p -> p.contains("*") && matches(p, ga));
+    }
+
+    /**
+     * Override for a dependency: exact {@code g:a:v}, then exact {@code g:a}, then the most specific
+     * {@code *} pattern (longest literal text), e.g. {@code com.acme*} or {@code com.acme.platform:*-client}.
+     * {@code *} matches any characters, including {@code :}; everything else is literal.
+     */
+    public static java.util.Optional<String> overrideFor(Map<String, String> overrides, io.themis.model.Coordinate c) {
+        String exact = overrides.getOrDefault(c.ga() + ":" + c.version(), overrides.get(c.ga()));
+        if (exact != null) return java.util.Optional.of(exact);
+        return overrides.entrySet().stream()
+                .filter(e -> e.getKey().contains("*"))
+                .filter(e -> matches(e.getKey(), c.ga()) || matches(e.getKey(), c.ga() + ":" + c.version()))
+                .max(java.util.Comparator.comparingInt((Map.Entry<String, String> e) -> e.getKey().replace("*", "").length())
+                        .thenComparing(Map.Entry::getKey))
+                .map(Map.Entry::getValue);
+    }
+
+    static boolean matches(String pattern, String value) {
+        StringBuilder regex = new StringBuilder();
+        for (String part : pattern.split("\\*", -1)) {
+            if (!regex.isEmpty()) regex.append(".*");
+            regex.append(java.util.regex.Pattern.quote(part));
+        }
+        return value.matches(regex.toString());
     }
 
     public LicensePolicy withSeverities(Map<LicenseCategory, Severity> s) {

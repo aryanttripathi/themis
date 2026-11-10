@@ -60,6 +60,9 @@ final class ScanCommand implements Callable<Integer> {
     @Option(names = "--include-test", description = "Include test-scoped dependencies.")
     boolean includeTest;
 
+    @Option(names = "--lenient", description = "Report unresolvable dependencies as warnings and scan the rest.")
+    boolean lenient;
+
     @Mixin
     ResolverMixin resolver;
 
@@ -68,7 +71,7 @@ final class ScanCommand implements Callable<Integer> {
 
     @Override
     public Integer call() throws Exception {
-        ScanConfig cfg = CliConfig.build(projectDir, config, only, failOn, javaRelease, offline, includeTest);
+        ScanConfig cfg = CliConfig.build(projectDir, config, only, failOn, javaRelease, offline, includeTest).withLenient(lenient);
 
         ScanReport report = Themis.defaultEngine(parent.environment().withResolver(resolver.apply(parent.environment().resolver())))
                 .scan(projectDir, cfg);

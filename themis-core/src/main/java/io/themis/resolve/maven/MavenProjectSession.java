@@ -65,6 +65,7 @@ final class MavenProjectSession implements ProjectSession {
 
     private final MavenRuntime runtime;
     private final ScanConfig config;
+    private final List<String> resolutionWarnings = new java.util.ArrayList<>();
     private final List<Module> modules;
     private final ProjectInfo project;
     /** g:a:v -> licenses of that POM; dependency POMs are read at most once per scan. */
@@ -119,7 +120,9 @@ final class MavenProjectSession implements ProjectSession {
                 merged.merge(d.coordinate().artifactKey() + ":" + d.coordinate().version(), d, MavenProjectSession::merge);
             }
         }
-        return new DependencyGraph(project.coordinate(), List.copyOf(merged.values()), runtime.warnings());
+        List<String> warnings = new java.util.ArrayList<>(runtime.warnings());
+        warnings.addAll(resolutionWarnings);
+        return new DependencyGraph(project.coordinate(), List.copyOf(merged.values()), warnings);
     }
 
     /**
@@ -240,7 +243,9 @@ final class MavenProjectSession implements ProjectSession {
         try {
             result = runtime.system().resolveDependencies(session, new DependencyRequest(collect, filter));
         } catch (DependencyResolutionException e) {
-            throw failure(self, e);
+            if (!config.lenient() || e.getResult() == null || e.getResult().getRoot() == null) throw failure(self, e);
+            resolutionWarnings.add(failure(self, e).getMessage() + " (continuing: --lenient)");
+            result = e.getResult();
         }
 
         Map<String, Dependency> out = new LinkedHashMap<>();

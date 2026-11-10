@@ -125,8 +125,7 @@ public final class LicenseLookup {
 
     private Optional<String> override(State s, Settings settings) {
         Coordinate c = s.coordinate();
-        String value = Optional.ofNullable(settings.overrides().get(c.ga() + ":" + c.version()))
-                .orElse(settings.overrides().get(c.ga()));
+        String value = io.themis.config.LicensePolicy.overrideFor(settings.overrides(), c).orElse(null);
         if (value == null) return Optional.empty();
         Optional<SpdxNormalizer.Normalized> n = normalizer.normalize(value, null);
         if (n.isEmpty()) s.notes.add("licenses.overrides value '" + value + "' is not a recognised SPDX expression; ignored");

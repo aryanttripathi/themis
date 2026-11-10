@@ -233,6 +233,17 @@ class GradleDependencyResolverTest {
     }
 
     @Test
+    void lenientModeReportsUnresolvableDependenciesAsWarnings() {
+        repo.publish("com.acme:ok:1.0", "jar", "");
+        Path dir = build("app", "dependencies { implementation 'com.acme:ok:1.0'\n implementation 'com.acme:missing:9.9' }\n");
+
+        DependencyGraph graph = resolve(dir, ScanConfig.defaults().withLenient(true));
+
+        assertThat(coordinates(graph)).containsExactly("com.acme:ok:1.0");
+        assertThat(graph.warnings()).anySatisfy(w -> assertThat(w).contains("com.acme:missing:9.9"));
+    }
+
+    @Test
     void brokenBuildScriptFailsWithGradlesOutput() {
         Path dir = build("app", "this is not groovy {{{\n");
 

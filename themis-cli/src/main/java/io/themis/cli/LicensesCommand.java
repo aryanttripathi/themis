@@ -55,12 +55,15 @@ final class LicensesCommand implements Callable<Integer> {
     @Option(names = "--config", description = "Config file (default: DIR/.themis.yml).")
     Path config;
 
+    @Option(names = "--lenient", description = "Report unresolvable dependencies as warnings and scan the rest.")
+    boolean lenient;
+
     @Mixin
     ResolverMixin resolver;
 
     @Override
     public Integer call() {
-        ScanConfig cfg = CliConfig.build(projectDir, config, null, null, null, offline, includeTest);
+        ScanConfig cfg = CliConfig.build(projectDir, config, null, null, null, offline, includeTest).withLenient(lenient);
         ScanReport report = Themis.licenses(projectDir, cfg,
                 parent.environment().withResolver(resolver.apply(parent.environment().resolver())));
         print(report, spec.commandLine().getOut());
