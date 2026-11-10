@@ -58,7 +58,7 @@ final class GradleRunner {
             }
             if (process.exitValue() != 0 || !Files.isRegularFile(output)) {
                 throw new ResolutionException("Gradle failed (exit " + process.exitValue() + ") in " + projectDir
-                        + ":\n" + tail(log, 25), List.of(), null);
+                        + ":\n" + summarize(readLines(log)), List.of(), null);
             }
             return JSON.readValue(output.toFile(), GradleDump.class);
         } catch (IOException e) {
@@ -79,13 +79,39 @@ final class GradleRunner {
         return List.of("gradle");
     }
 
-    private static String tail(Path log, int lines) {
+    private static List<String> readLines(Path log) {
         try {
-            List<String> all = Files.readAllLines(log);
-            return String.join("\n", all.subList(Math.max(0, all.size() - lines), all.size()));
+            return Files.readAllLines(log);
         } catch (IOException | UncheckedIOException e) {
-            return "(no Gradle output)";
+            return List.of("(no Gradle output)");
         }
+    }
+
+    /**
+     * Gradle's "* What went wrong:" section (without stack frames), else the last 25 lines; plus a
+     * hint for the most common failure: an old Gradle running on a JDK newer than it supports.
+     */
+    static String summarize(List<String> log) {
+        int start = -1;
+        for (int i = 0; i < log.size(); i++) {
+            if (log.get(i).startsWith("* What went wrong")) { start = i; break; }
+        }
+        List<String> picked = new ArrayList<>();
+        if (start >= 0) {
+            for (int i = start; i < log.size() && !log.get(i).startsWith("* Try") && !log.get(i).startsWith("* Exception is"); i++) {
+                if (!log.get(i).trim().startsWith("at ")) picked.add(log.get(i));
+            }
+            if (picked.size() > 40) picked = picked.subList(0, 40);
+        } else {
+            picked = log.subList(Math.max(0, log.size() - 25), log.size());
+        }
+        String text = String.join("\n", picked).strip();
+        String all = String.join("\n", log);
+        if (all.contains("Unsupported class file major version") || all.contains("Unsupported Java")) {
+            text += "\nhint: this Gradle version cannot run on the current JDK. Point JAVA_HOME at a JDK it supports, e.g. "
+                    + "JAVA_HOME=$(/usr/libexec/java_home -v 11) themis scan .  (Gradle 6.x: JDK <= 16, 7.0-7.2: <= 16, 7.3-7.5: <= 18, 7.6: <= 19)";
+        }
+        return text;
     }
 
     private static void deleteQuietly(Path dir) {

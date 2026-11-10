@@ -164,6 +164,31 @@ class GradleDependencyResolverTest {
     }
 
     @Test
+    void rootProjectWithoutRepositoriesIsSkippedWithAWarning() throws Exception {
+        // common BFF shape: dependency management on the root, repositories only in subprojects
+        repo.publish("com.acme:c:1.5", "jar", "");
+        repo.publish("com.acme:bom:1.0", "pom", "<dependencyManagement>" + deps("com.acme:c:1.5") + "</dependencyManagement>");
+        Path dir = Files.createDirectories(tmp.resolve("bff"));
+        Files.writeString(dir.resolve("settings.gradle"), "rootProject.name = 'bff'\ninclude 'svc'\n");
+        Files.writeString(dir.resolve("build.gradle"), """
+                allprojects {
+                    group = 'com.acme'; version = '1.0'
+                    apply plugin: 'java'
+                    dependencies { implementation platform('com.acme:bom:1.0') }
+                }
+                project(':svc') {
+                    repositories { maven { url = uri('%s') } }
+                    dependencies { implementation 'com.acme:c' }
+                }
+                """.formatted(repo.url()));
+
+        DependencyGraph graph = resolve(dir, ScanConfig.defaults());
+
+        assertThat(coordinates(graph)).containsExactly("com.acme:c:1.5");
+        assertThat(graph.warnings()).anySatisfy(w -> assertThat(w).contains("project ':'").contains("no repositories"));
+    }
+
+    @Test
     void readsJavaReleaseAndProjectCoordinate() throws Exception {
         Path dir = build("svc", "java { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17 }\n");
         Files.createDirectories(dir.resolve("src/main/java"));

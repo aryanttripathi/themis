@@ -32,6 +32,7 @@ gradle.rootProject { root ->
 
             def projects = []
             def unresolved = []
+            def warnings = []
             def moduleIds = [:]                 // ModuleComponentIdentifier -> project that resolved it (its repositories)
 
             root.allprojects.each { p ->
@@ -50,13 +51,28 @@ gradle.rootProject { root ->
                     if (conf == null || !conf.canBeResolved) return
                     def nodes = [:]               // gav -> [direct, path]
                     def files = [:]               // gav -> [absolute file paths]
-                    def rootResult = conf.incoming.resolutionResult.root
+                    def rootResult
+                    try {
+                        rootResult = conf.incoming.resolutionResult.root
+                        rootResult.dependencies.size()   // forces resolution inside the try
+                    } catch (Exception e) {
+                        if (p.repositories.isEmpty()) {
+                            // e.g. a root project that only applies dependency management; its subprojects carry the real graph
+                            warnings << "skipped project '${p.path}' ${name}: no repositories defined (${e.message?.readLines()?.first()})".toString()
+                            return
+                        }
+                        throw e
+                    }
                     def queue = new ArrayDeque()
                     def seen = [] as Set
                     rootResult.dependencies.each { queue.add([it, [selfGav], true]) }
                     while (!queue.isEmpty()) {
                         def (dep, path, direct) = queue.poll()
                         if (dep instanceof UnresolvedDependencyResult) {
+                            if (p.repositories.isEmpty()) {
+                                warnings << "skipped ${dep.requested.displayName} in project '${p.path}' ${name}: no repositories defined".toString()
+                                continue
+                            }
                             unresolved << [project: p.path, configuration: name,
                                            requested: dep.requested.displayName, reason: String.valueOf(dep.failure?.message)]
                             continue
@@ -93,7 +109,7 @@ gradle.rootProject { root ->
             def poms = [:]
             moduleIds.groupBy { it.value }.each { proj, entries -> poms.putAll(pomLicenses(proj, entries.keySet())) }
             def rc = coord(root)
-            def result = [root: rc, projects: projects, unresolved: unresolved, licenses: poms]
+            def result = [root: rc, projects: projects, unresolved: unresolved, licenses: poms, warnings: warnings]
             new File(out.toString()).text = JsonOutput.toJson(result)
         }
     }

@@ -48,7 +48,7 @@ final class GradleProjectSession implements ProjectSession {
         failOnUnresolved(dump, includeTest);
         Coordinate rootCoordinate = coordinate(dump.root().gav());
         this.project = projectInfo(root, rootCoordinate, dump);
-        this.graph = new DependencyGraph(rootCoordinate, merge(dump, includeTest));
+        this.graph = new DependencyGraph(rootCoordinate, merge(dump, includeTest), dump.warnings());
         dump.licenses().forEach((gav, pom) -> licenses.put(gav, new PomLicenses(
                 pom.licenses().stream().map(l -> new DeclaredLicense(l.name(), l.url())).toList(),
                 pom.inherited(), Optional.ofNullable(pom.problem()))));

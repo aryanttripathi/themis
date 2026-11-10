@@ -4,12 +4,14 @@ import java.util.List;
 import java.util.Map;
 
 /** The JSON written by {@code themis-init.gradle}; plain data, mapped to the model by {@link GradleProjectSession}. */
-record GradleDump(Coord root, List<Project> projects, List<Unresolved> unresolved, Map<String, Pom> licenses) {
+record GradleDump(Coord root, List<Project> projects, List<Unresolved> unresolved, Map<String, Pom> licenses,
+                  List<String> warnings) {
 
     GradleDump {
         projects = projects == null ? List.of() : projects;
         unresolved = unresolved == null ? List.of() : unresolved;
         licenses = licenses == null ? Map.of() : licenses;
+        warnings = warnings == null ? List.of() : warnings;
     }
 
     record Coord(String group, String name, String version) {
