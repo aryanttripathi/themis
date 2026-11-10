@@ -83,6 +83,39 @@ class ScanEngineTest {
         return new AnalyzerResult(List.of(Finding.forDependency(s.name(), FindingType.VULNERABILITY, s, s.name(), "", DEP, Map.of())), List.of());
     }
 
+    @Test
+    void analyzersSeeSessionMetadataWhileTheSessionIsOpenAndDataReachesTheReport() throws IOException {
+        writePom("17");
+        java.util.concurrent.atomic.AtomicBoolean closed = new java.util.concurrent.atomic.AtomicBoolean();
+        io.themis.resolve.DependencyResolver resolver = new io.themis.resolve.DependencyResolver() {
+            public boolean supports(Path dir) { return true; }
+            public io.themis.resolve.ProjectSession open(Path dir, ScanConfig cfg) {
+                return new io.themis.resolve.ProjectSession() {
+                    public io.themis.model.ProjectInfo project() {
+                        return new io.themis.model.ProjectInfo(dir, DEP, 17, List.of(), List.of());
+                    }
+                    public io.themis.model.DependencyGraph resolveDependencies() {
+                        return io.themis.model.DependencyGraph.empty(DEP);
+                    }
+                    public io.themis.resolve.PomLicenses pomLicenses(Coordinate c) {
+                        if (closed.get()) throw new IllegalStateException("session already closed");
+                        return new io.themis.resolve.PomLicenses(
+                                List.of(new io.themis.resolve.DeclaredLicense("MIT License", null)), false, java.util.Optional.empty());
+                    }
+                    public void close() { closed.set(true); }
+                };
+            }
+        };
+        Analyzer reader = analyzer("reader", Stage.DEPENDENCY, ctx -> new AnalyzerResult(List.of(),
+                List.of(ctx.metadata().pomLicenses(DEP).licenses().get(0).name())));
+
+        ScanReport report = new ScanEngine(resolver, List.of(reader), "test").scan(project, ScanConfig.defaults());
+
+        assertThat(report.errors()).isEmpty();
+        assertThat(report.dataOf(String.class)).containsExactly("MIT License");
+        assertThat(closed).isTrue();
+    }
+
     private ScanEngine engine(Analyzer... analyzers) {
         // Project facts from the real Maven model, hermetic settings, no dependency resolution.
         MavenDependencyResolver maven = new MavenDependencyResolver(FixtureRepo.create(fixtures).options());

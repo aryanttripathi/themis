@@ -26,12 +26,15 @@ class JsonReportWriterTest {
                 List.of(new Dependency(epoll, Scope.COMPILE, true, List.of(root, epoll), Optional.empty())),
                 List.of("The POM for x:y:jar:1 is missing, no dependency information available"));
         ScanReport report = new ScanReport("test", Instant.EPOCH, Duration.ZERO,
-                new ProjectInfo(Path.of("/p"), root, 17, List.of(), List.of()), graph, List.of(), List.of());
+                new ProjectInfo(Path.of("/p"), root, 17, List.of(), List.of()), graph, List.of(), List.of(),
+                List.of(new io.themis.model.LicenseInfo(epoll, Optional.of("Apache-2.0"),
+                        io.themis.model.LicenseCategory.PERMISSIVE, "pom", List.of("Apache License, Version 2.0"), List.of())));
 
         String json = new JsonReportWriter().toJson(report);
 
         assertThat(json).contains("\"warnings\" : [ \"The POM for x:y:jar:1 is missing, no dependency information available\" ]");
         assertThat(json).contains("\"coordinate\" : \"io.netty:epoll:jar:linux-x86_64:4.1\"");
         assertThat(json).contains("\"modules\" : [ \"g:app:1\" ]");
+        assertThat(json).containsPattern("\"license\" : \\{\\s*\"spdx\" : \"Apache-2.0\",\\s*\"category\" : \"PERMISSIVE\",\\s*\"source\" : \"pom\"");
     }
 }

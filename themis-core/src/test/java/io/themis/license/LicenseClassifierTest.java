@@ -28,6 +28,14 @@ class LicenseClassifierTest {
             "(MIT OR Apache-2.0)                           | PERMISSIVE",
             "LicenseRef-Acme-Commercial                    | PROPRIETARY",
             "Some-Custom-License                           | UNKNOWN",
+            "LicenseRef-Public-Domain                      | PERMISSIVE",
+            "Unlicense                                     | PERMISSIVE",
+            "CC0-1.0                                       | PERMISSIVE",
+            "BSD-2-Clause                                  | PERMISSIVE",
+            "JSON                                          | PROPRIETARY",
+            "GPL-2.0-only WITH Universal-FOSS-exception-1.0 | STRONG_COPYLEFT",
+            "CDDL-1.1 OR GPL-2.0-only WITH Classpath-exception-2.0 | WEAK_COPYLEFT",
+            "EPL-1.0 OR LGPL-2.1-only                      | WEAK_COPYLEFT",
     })
     void classifies(String spdx, LicenseCategory expected) {
         assertThat(classifier.classify(spdx)).isEqualTo(expected);

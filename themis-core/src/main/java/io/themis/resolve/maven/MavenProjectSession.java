@@ -6,9 +6,13 @@ import io.themis.model.Dependency;
 import io.themis.model.DependencyGraph;
 import io.themis.model.ProjectInfo;
 import io.themis.model.Scope;
+import io.themis.resolve.DeclaredLicense;
+import io.themis.resolve.PomLicenses;
 import io.themis.resolve.ProjectSession;
 import io.themis.resolve.ResolutionException;
+import org.apache.maven.model.License;
 import org.apache.maven.model.Model;
+import org.apache.maven.model.building.ModelBuildingResult;
 import org.eclipse.aether.RepositorySystemSession;
 import org.eclipse.aether.artifact.Artifact;
 import org.eclipse.aether.artifact.ArtifactProperties;
@@ -20,7 +24,10 @@ import org.eclipse.aether.collection.DependencyCollectionException;
 import org.eclipse.aether.graph.DependencyFilter;
 import org.eclipse.aether.graph.DependencyNode;
 import org.eclipse.aether.graph.Exclusion;
+import org.eclipse.aether.repository.RemoteRepository;
 import org.eclipse.aether.resolution.ArtifactDescriptorException;
+import org.eclipse.aether.resolution.ArtifactRequest;
+import org.eclipse.aether.resolution.ArtifactResolutionException;
 import org.eclipse.aether.resolution.ArtifactResult;
 import org.eclipse.aether.resolution.DependencyRequest;
 import org.eclipse.aether.resolution.DependencyResolutionException;
@@ -60,6 +67,9 @@ final class MavenProjectSession implements ProjectSession {
     private final ScanConfig config;
     private final List<Module> modules;
     private final ProjectInfo project;
+    /** g:a:v -> licenses of that POM; dependency POMs are read at most once per scan. */
+    private final Map<String, PomLicenses> pomLicenses = new java.util.HashMap<>();
+    private List<RemoteRepository> allRepositories;
 
     private MavenProjectSession(MavenRuntime runtime, ScanConfig config, List<Module> modules, ProjectInfo project) {
         this.runtime = runtime;
@@ -110,6 +120,50 @@ final class MavenProjectSession implements ProjectSession {
             }
         }
         return new DependencyGraph(project.coordinate(), List.copyOf(merged.values()), runtime.warnings());
+    }
+
+    /**
+     * {@code <licenses>} of the dependency's effective POM (parents applied by the model builder).
+     * A classified artifact ({@code linux-x86_64}, {@code tests}) shares its main artifact's POM.
+     * Synchronized: analyzers may run concurrently; the work is local (POMs were fetched during resolution).
+     */
+    @Override
+    public synchronized PomLicenses pomLicenses(Coordinate dependency) {
+        String key = dependency.groupId() + ":" + dependency.artifactId() + ":" + dependency.version();
+        return pomLicenses.computeIfAbsent(key, k -> readPomLicenses(dependency));
+    }
+
+    private PomLicenses readPomLicenses(Coordinate c) {
+        Artifact pom = new DefaultArtifact(c.groupId(), c.artifactId(), "", "pom", c.version());
+        Path file;
+        try {
+            file = runtime.system().resolveArtifact(runtime.session(),
+                    new ArtifactRequest(pom, allRepositories(), "project")).getArtifact().getFile().toPath();
+        } catch (ArtifactResolutionException e) {
+            return PomLicenses.unreadable("Cannot resolve the POM " + pom + ": " + e.getMessage());
+        }
+        ModelBuildingResult result;
+        try {
+            result = runtime.buildRepositoryModel(file, allRepositories());
+        } catch (ResolutionException e) {
+            return PomLicenses.unreadable(e.getMessage());
+        }
+        List<DeclaredLicense> declared = result.getEffectiveModel().getLicenses().stream()
+                .map(l -> new DeclaredLicense(l.getName(), l.getUrl())).toList();
+        List<License> own = result.getRawModel().getLicenses();
+        return new PomLicenses(declared, own.isEmpty() && !declared.isEmpty(), Optional.empty());
+    }
+
+    /** Union of the modules' repositories (with mirrors etc. applied), in reactor order. */
+    private List<RemoteRepository> allRepositories() {
+        if (allRepositories == null) {
+            Map<String, RemoteRepository> byId = new LinkedHashMap<>();
+            for (Module m : modules) {
+                runtime.remoteRepositories(m.model()).forEach(r -> byId.putIfAbsent(r.getId(), r));
+            }
+            allRepositories = List.copyOf(byId.values());
+        }
+        return allRepositories;
     }
 
     @Override

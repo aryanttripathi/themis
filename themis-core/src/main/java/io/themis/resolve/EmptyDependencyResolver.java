@@ -38,6 +38,11 @@ public final class EmptyDependencyResolver implements DependencyResolver {
             }
 
             @Override
+            public PomLicenses pomLicenses(io.themis.model.Coordinate dependency) {
+                return delegate.pomLicenses(dependency);
+            }
+
+            @Override
             public void close() {
                 delegate.close();
             }

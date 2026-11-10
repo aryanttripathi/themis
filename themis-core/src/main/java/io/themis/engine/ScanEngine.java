@@ -40,25 +40,26 @@ public final class ScanEngine {
     public ScanReport scan(Path projectDir, ScanConfig config) {
         Instant start = Instant.now();
 
+        List<Finding> findings = new CopyOnWriteArrayList<>();
+        List<AnalyzerError> errors = new CopyOnWriteArrayList<>();
         ProjectInfo project;
         DependencyGraph graph;
+        ScanContext ctx;
+        // The session stays open while analyzers run: they read dependency metadata (POM licenses) from it.
         try (ProjectSession session = resolver.open(projectDir, config)) {
             project = session.project();
             graph = session.resolveDependencies();
-        }
-        ScanContext ctx = new ScanContext(project, graph, config);
+            ctx = new ScanContext(project, graph, config, session);
 
-        List<Finding> findings = new CopyOnWriteArrayList<>();
-        List<AnalyzerError> errors = new CopyOnWriteArrayList<>();
-
-        int threads = Math.max(2, Runtime.getRuntime().availableProcessors());
-        ExecutorService pool = Executors.newFixedThreadPool(threads);
-        try {
-            // DEPENDENCY and SOURCE analyzers are independent: run them together.
-            runAll(pool, ctx, enabled(config, Stage.DEPENDENCY, Stage.SOURCE), findings, errors);
-            runAll(pool, ctx, enabled(config, Stage.ADVISOR), findings, errors);
-        } finally {
-            pool.shutdownNow();
+            int threads = Math.max(2, Runtime.getRuntime().availableProcessors());
+            ExecutorService pool = Executors.newFixedThreadPool(threads);
+            try {
+                // DEPENDENCY and SOURCE analyzers are independent: run them together.
+                runAll(pool, ctx, enabled(config, Stage.DEPENDENCY, Stage.SOURCE), findings, errors);
+                runAll(pool, ctx, enabled(config, Stage.ADVISOR), findings, errors);
+            } finally {
+                pool.shutdownNow();
+            }
         }
 
         List<Finding> sorted = new ArrayList<>(findings);
@@ -67,7 +68,7 @@ public final class ScanEngine {
                 .thenComparing(Finding::id));
 
         return new ScanReport(toolVersion, start, Duration.between(start, Instant.now()),
-                project, graph, sorted, errors);
+                project, graph, sorted, errors, ctx.allData());
     }
 
     private List<Analyzer> enabled(ScanConfig config, Stage... stages) {

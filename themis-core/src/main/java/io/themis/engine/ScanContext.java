@@ -3,6 +3,7 @@ package io.themis.engine;
 import io.themis.config.ScanConfig;
 import io.themis.model.DependencyGraph;
 import io.themis.model.ProjectInfo;
+import io.themis.resolve.DependencyMetadata;
 
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -13,12 +14,23 @@ public final class ScanContext {
     private final ProjectInfo project;
     private final DependencyGraph graph;
     private final ScanConfig config;
+    private final DependencyMetadata metadata;
     private final List<Object> data = new CopyOnWriteArrayList<>();
 
     public ScanContext(ProjectInfo project, DependencyGraph graph, ScanConfig config) {
+        this(project, graph, config, DependencyMetadata.NONE);
+    }
+
+    public ScanContext(ProjectInfo project, DependencyGraph graph, ScanConfig config, DependencyMetadata metadata) {
         this.project = project;
         this.graph = graph;
         this.config = config;
+        this.metadata = metadata;
+    }
+
+    /** Build-tool metadata (e.g. dependency POM licenses), valid while the scan runs. */
+    public DependencyMetadata metadata() {
+        return metadata;
     }
 
     public ProjectInfo project() {

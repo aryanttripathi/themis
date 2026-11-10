@@ -7,11 +7,14 @@ import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;
 import com.fasterxml.jackson.datatype.jdk8.Jdk8Module;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import io.themis.model.Coordinate;
+import io.themis.model.Dependency;
+import io.themis.model.LicenseInfo;
 import io.themis.model.ScanReport;
 
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
@@ -61,10 +64,31 @@ public final class JsonReportWriter implements ReportWriter {
         summary.put("direct", r.graph().directCount());
         summary.put("bySeverity", r.countBySeverity());
         doc.put("summary", summary);
-        doc.put("dependencies", r.graph().dependencies());
+        Map<Coordinate, LicenseInfo> licenses = new HashMap<>();
+        r.dataOf(LicenseInfo.class).forEach(l -> licenses.put(l.dependency(), l));
+        doc.put("dependencies", r.graph().dependencies().stream().map(d -> dependency(d, licenses.get(d.coordinate()))).toList());
         doc.put("warnings", r.graph().warnings());
         doc.put("findings", r.findings());
         doc.put("errors", r.errors());
         return doc;
+    }
+
+    /** The dependency record's fields, plus {@code license {spdx, category, source}} when the license analyzer ran. */
+    private static Map<String, Object> dependency(Dependency d, LicenseInfo license) {
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("coordinate", d.coordinate());
+        m.put("scope", d.scope());
+        m.put("direct", d.direct());
+        m.put("path", d.path());
+        m.put("jarFile", d.jarFile());
+        m.put("modules", d.modules());
+        if (license != null) {
+            Map<String, Object> l = new LinkedHashMap<>();
+            l.put("spdx", license.spdx().orElse(null));
+            l.put("category", license.category());
+            l.put("source", license.source());
+            m.put("license", l);
+        }
+        return m;
     }
 }

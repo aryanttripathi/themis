@@ -155,6 +155,31 @@ public final class MavenRuntime implements AutoCloseable {
     }
 
     /**
+     * Effective model of a POM fetched from a repository (a dependency's POM), like Maven's
+     * artifact descriptor reader builds it: parents resolved from {@code repositories} (plus any
+     * the POMs declare, unless POM repositories are ignored), interpolation, minimal validation.
+     * Shares this runtime's {@link ModelCache}, so common parents are read once per scan.
+     *
+     * @throws ResolutionException if the model cannot be built (e.g. its parent is not found)
+     */
+    ModelBuildingResult buildRepositoryModel(Path pom, List<RemoteRepository> repositories) {
+        DefaultModelBuildingRequest request = new DefaultModelBuildingRequest();
+        request.setModelSource(new org.apache.maven.model.building.FileModelSource(pom.toFile()));
+        request.setValidationLevel(ModelBuildingRequest.VALIDATION_LEVEL_MINIMAL);
+        request.setProcessPlugins(false);
+        request.setTwoPhaseBuilding(false);
+        request.setLocationTracking(false);
+        request.setSystemProperties(systemProperties);
+        request.setModelCache(modelCache);
+        request.setModelResolver(new RepositoryModelResolver(system, session, repositories, ignorePomRepositories));
+        try {
+            return modelBuilder.build(request);
+        } catch (ModelBuildingException e) {
+            throw failure(pom, e);
+        }
+    }
+
+    /**
      * The repositories to resolve a project's dependencies from, with mirrors, proxies and
      * credentials applied: those of its effective model (central from the super POM, the project's,
      * its parents' and active settings profiles' repositories), or, with

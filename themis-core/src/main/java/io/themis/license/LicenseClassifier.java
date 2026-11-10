@@ -26,11 +26,15 @@ public final class LicenseClassifier {
     private static final Map<LicenseCategory, Set<String>> FAMILIES = Map.of(
             LicenseCategory.PERMISSIVE, Set.of(
                     "apache-2.0", "apache-1.1", "mit", "mit-0", "bsd-2-clause", "bsd-3-clause", "isc", "0bsd",
-                    "unlicense", "cc0-1.0", "zlib", "bsl-1.0", "upl-1.0", "edl-1.0", "w3c", "postgresql"),
+                    "unlicense", "cc0-1.0", "zlib", "bsl-1.0", "upl-1.0", "edl-1.0", "w3c", "postgresql",
+                    "apache-1.0", "bsd-1-clause", "bsd-4-clause", "bsd-3-clause-clear", "cc-by-3.0", "cc-by-4.0",
+                    "wtfpl", "x11", "icu", "unicode-dfs-2016", "unicode-3.0", "psf-2.0", "python-2.0", "blueoak-1.0.0",
+                    "ms-pl", "ncsa", "libpng", "ijg", "afl-2.1", "afl-3.0", "openssl", "artistic-2.0"),
             LicenseCategory.WEAK_COPYLEFT, Set.of(
                     "lgpl-2.0", "lgpl-2.1", "lgpl-3.0", "mpl-1.1", "mpl-2.0", "epl-1.0", "epl-2.0",
-                    "cddl-1.0", "cddl-1.1", "cpl-1.0"),
-            LicenseCategory.STRONG_COPYLEFT, Set.of("gpl-2.0", "gpl-3.0"),
+                    "cddl-1.0", "cddl-1.1", "cpl-1.0", "mpl-1.0", "mpl-2.0-no-copyleft-exception", "eupl-1.1",
+                    "eupl-1.2", "zpl-2.1", "apsl-2.0", "ofl-1.1", "cc-by-sa-4.0", "ruby"),
+            LicenseCategory.STRONG_COPYLEFT, Set.of("gpl-1.0", "gpl-2.0", "gpl-3.0"),
             LicenseCategory.NETWORK_COPYLEFT, Set.of("agpl-3.0", "sspl-1.0"));
 
     /** Restrictiveness order used to combine expressions; UNKNOWN and PROPRIETARY need human review. */
@@ -65,6 +69,10 @@ public final class LicenseClassifier {
     private LicenseCategory classifySingle(String id) {
         String norm = id.trim().toLowerCase(Locale.ROOT);
         if (norm.equals("gpl-2.0-with-classpath-exception")) return LicenseCategory.WEAK_COPYLEFT;
+        if (norm.equals("licenseref-public-domain")) return LicenseCategory.PERMISSIVE;
+        // JSON License: MIT plus "shall be used for Good, not Evil", a field-of-use restriction that
+        // makes it non-free (OSI/FSF) and needs legal review, like custom commercial terms.
+        if (norm.equals("json")) return LicenseCategory.PROPRIETARY;
         if (norm.startsWith("licenseref-") || norm.equals("proprietary")) return LicenseCategory.PROPRIETARY;
 
         // Drop SPDX suffixes: -only, -or-later, and the deprecated "+" form.

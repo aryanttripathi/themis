@@ -1,0 +1,97 @@
+# SPDX license and exception identifiers accepted as-is (canonical spelling; matched case-insensitively).
+# A subset of https://spdx.org/licenses/ covering what appears in the Java ecosystem.
+# Deprecated ids are mapped with "=>" to their current form.
+0BSD
+AFL-2.1
+AFL-3.0
+AGPL-3.0-only
+AGPL-3.0-or-later
+Apache-1.0
+Apache-1.1
+Apache-2.0
+APSL-2.0
+Artistic-2.0
+BlueOak-1.0.0
+BSD-1-Clause
+BSD-2-Clause
+BSD-3-Clause
+BSD-3-Clause-Clear
+BSD-4-Clause
+BSL-1.0
+CC-BY-3.0
+CC-BY-4.0
+CC-BY-SA-4.0
+CC0-1.0
+CDDL-1.0
+CDDL-1.1
+CPL-1.0
+EPL-1.0
+EPL-2.0
+EUPL-1.1
+EUPL-1.2
+GPL-1.0-only
+GPL-1.0-or-later
+GPL-2.0-only
+GPL-2.0-or-later
+GPL-3.0-only
+GPL-3.0-or-later
+ICU
+IJG
+ISC
+JSON
+LGPL-2.0-only
+LGPL-2.0-or-later
+LGPL-2.1-only
+LGPL-2.1-or-later
+LGPL-3.0-only
+LGPL-3.0-or-later
+Libpng
+MIT
+MIT-0
+MPL-1.0
+MPL-1.1
+MPL-2.0
+MPL-2.0-no-copyleft-exception
+MS-PL
+NCSA
+OFL-1.1
+OpenSSL
+PostgreSQL
+PSF-2.0
+Python-2.0
+Ruby
+SSPL-1.0
+Unicode-DFS-2016
+Unicode-3.0
+Unlicense
+UPL-1.0
+W3C
+WTFPL
+X11
+Zlib
+ZPL-2.1
+# exceptions (only valid after WITH)
+Classpath-exception-2.0
+Universal-FOSS-exception-1.0
+LLVM-exception
+GCC-exception-3.1
+OpenJDK-assembly-exception-1.0
+FLTK-exception
+# deprecated forms
+GPL-1.0 => GPL-1.0-only
+GPL-1.0+ => GPL-1.0-or-later
+GPL-2.0 => GPL-2.0-only
+GPL-2.0+ => GPL-2.0-or-later
+GPL-3.0 => GPL-3.0-only
+GPL-3.0+ => GPL-3.0-or-later
+LGPL-2.0 => LGPL-2.0-only
+LGPL-2.0+ => LGPL-2.0-or-later
+LGPL-2.1 => LGPL-2.1-only
+LGPL-2.1+ => LGPL-2.1-or-later
+LGPL-3.0 => LGPL-3.0-only
+LGPL-3.0+ => LGPL-3.0-or-later
+AGPL-3.0 => AGPL-3.0-only
+AGPL-3.0+ => AGPL-3.0-or-later
+GPL-2.0-with-classpath-exception => GPL-2.0-only WITH Classpath-exception-2.0
+# Themis-specific reference for public-domain dedications without an SPDX id
+LicenseRef-Public-Domain

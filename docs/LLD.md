@@ -507,3 +507,11 @@ Resolution warnings (missing/invalid transitive POMs, undecryptable passwords) a
 - [x] Fixture repository/projects for component tests (`FixtureRepo`); hermetic CLI tests via `ThemisCli.newCommandLine(ResolverOptions)`; network IT tagged `network`
 - [x] Shaded jar: merged Apache NOTICE, single Apache LICENSE
 - [ ] `mvn dependency:tree` fallback (deferred, see section 4)
+
+## 18. Phase 2 status (licenses): done
+
+- `SpdxNormalizer` (bundled `aliases.tsv` + SPDX id list), `LicenseLookup` chain: config override -> effective POM (`pom` / `parent-pom`) -> deps.dev (cached 30 days in `~/.themis/cache`, skipped when `--offline`) -> license text inside the jar -> `UNKNOWN`. Multiple `<license>` entries are combined with `OR`.
+- `LicenseAnalyzer` with default severities: NETWORK_COPYLEFT and STRONG_COPYLEFT = HIGH, PROPRIETARY = MEDIUM, UNKNOWN = LOW, WEAK_COPYLEFT = INFO. Test scope is capped at INFO; provided/system are lowered one level.
+- `.themis.yml`: `licenses.severity` (category -> severity or NONE), `licenses.overrides`, `licenses.allowArtifacts`, `failOn.severity`, `network.offline`, `network.cacheTtlHours`, `analyzers`, `javaRelease`. Unknown keys fail with exit 2. Precedence: CLI flags > `--config FILE` or project `.themis.yml` > defaults.
+- CLI: `themis licenses [DIR]`, `scan` prints a `Licenses :` summary, `--config`, locale-independent `--fail-on`. JSON report: `license {spdx, category, source}` per dependency.
+- Verified on real projects: Spring Boot sample, `/tmp/rev/edge` (23/23 detected) and a copyleft mix (iText AGPL, MySQL GPL + FOSS exception, logback/H2/Jakarta dual licenses): 12/12 detected and classified correctly.

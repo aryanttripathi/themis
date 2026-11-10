@@ -27,6 +27,11 @@
             <groupId>com.fasterxml.jackson.datatype</groupId>
             <artifactId>jackson-datatype-jsr310</artifactId>
         </dependency>
+        <!-- .themis.yml (docs/LLD.md section 12); version from jackson-bom -->
+        <dependency>
+            <groupId>com.fasterxml.jackson.dataformat</groupId>
+            <artifactId>jackson-dataformat-yaml</artifactId>
+        </dependency>
 
         <!-- Maven Resolver + Maven 3.9 model machinery (P1, docs/LLD.md section 4).
              The sisu/javax.inject annotations are only needed for DI containers; we wire

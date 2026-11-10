@@ -54,7 +54,7 @@ final class DepsCommand implements Callable<Integer> {
     @Override
     public Integer call() {
         ScanConfig config = new ScanConfig(Set.of(), Severity.HIGH, OptionalInt.empty(), offline, includeTest);
-        DependencyGraph graph = Themis.resolve(projectDir, config, resolver.apply(parent.baseOptions()));
+        DependencyGraph graph = Themis.resolve(projectDir, config, resolver.apply(parent.environment().resolver()));
         print(graph, spec.commandLine().getOut());
         printWarnings(graph, spec.commandLine().getErr());
         return ThemisCli.EXIT_OK;

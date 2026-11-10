@@ -18,7 +18,7 @@ import static io.themis.testing.FixtureRepo.deps;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * CLI tests run against {@link ThemisCli#newCommandLine(ResolverOptions)} with fixture options only,
+ * CLI tests run against {@link ThemisCli#newCommandLine(io.themis.Environment)} with fixture options only,
  * so -Dmaven.repo.local, MAVEN_HOME or the real ~/.m2/settings.xml can never leak in.
  */
 class DepsCommandTest {
@@ -194,7 +194,8 @@ class DepsCommandTest {
     }
 
     private int run(String... args) {
-        CommandLine cli = ThemisCli.newCommandLine(options);
+        CommandLine cli = ThemisCli.newCommandLine(
+                new io.themis.Environment(options, tmp.resolve("themis-cache"), CliHarness.NO_DEPS_DEV));
         cli.setOut(new PrintWriter(out, true));
         cli.setErr(new PrintWriter(err, true));
         return cli.execute(args);

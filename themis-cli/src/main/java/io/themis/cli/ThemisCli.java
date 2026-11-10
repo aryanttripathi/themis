@@ -1,7 +1,7 @@
 package io.themis.cli;
 
+import io.themis.Environment;
 import io.themis.Themis;
-import io.themis.resolve.maven.ResolverOptions;
 import picocli.CommandLine;
 import picocli.CommandLine.Command;
 
@@ -11,7 +11,7 @@ import picocli.CommandLine.Command;
         versionProvider = ThemisCli.VersionProvider.class,
         description = "Scans a Java project for dependency licenses, vulnerabilities, "
                 + "Java-version compatibility, and leaked secrets/PII.",
-        subcommands = {ScanCommand.class, DepsCommand.class, CommandLine.HelpCommand.class})
+        subcommands = {ScanCommand.class, DepsCommand.class, LicensesCommand.class, CommandLine.HelpCommand.class})
 public final class ThemisCli implements Runnable {
 
     /** Exit codes (docs/HLD.md section 6). */
@@ -22,27 +22,27 @@ public final class ThemisCli implements Runnable {
     @CommandLine.Spec
     CommandLine.Model.CommandSpec spec;
 
-    /** Resolver environment the subcommands start from ({@code --settings} etc. adjust it). */
-    private final ResolverOptions baseOptions;
+    /** Environment the subcommands start from ({@code --settings} etc. adjust its resolver options). */
+    private final Environment environment;
 
-    ThemisCli(ResolverOptions baseOptions) {
-        this.baseOptions = baseOptions;
+    ThemisCli(Environment environment) {
+        this.environment = environment;
     }
 
-    ResolverOptions baseOptions() {
-        return baseOptions;
+    Environment environment() {
+        return environment;
     }
 
     public static void main(String[] args) {
-        System.exit(newCommandLine(ResolverOptions.defaults()).execute(args));
+        System.exit(newCommandLine(Environment.defaults()).execute(args));
     }
 
     /**
-     * @param baseOptions Maven environment to resolve with; production passes {@link ResolverOptions#defaults()},
-     *                    tests pass fixture options so nothing leaks in from the real environment
+     * @param environment production passes {@link Environment#defaults()}; tests pass fixture Maven
+     *                    settings, a temp cache and a stub deps.dev URL so nothing leaks in
      */
-    static CommandLine newCommandLine(ResolverOptions baseOptions) {
-        return new CommandLine(new ThemisCli(baseOptions))
+    static CommandLine newCommandLine(Environment environment) {
+        return new CommandLine(new ThemisCli(environment))
                 .setCaseInsensitiveEnumValuesAllowed(true)
                 .setExecutionExceptionHandler((ex, cmd, parseResult) -> {
                     cmd.getErr().println("error: " + ex.getMessage());

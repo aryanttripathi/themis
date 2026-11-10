@@ -4,6 +4,8 @@ import io.themis.config.ScanConfig;
 import io.themis.engine.Analyzer;
 import io.themis.engine.ScanEngine;
 import io.themis.javaversion.JavaVersionAnalyzer;
+import io.themis.license.LicenseAnalyzer;
+import io.themis.model.LicenseInfo;
 import io.themis.model.DependencyGraph;
 import io.themis.model.ScanReport;
 import io.themis.resolve.ProjectSession;
@@ -12,6 +14,8 @@ import io.themis.resolve.maven.ResolverOptions;
 
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 /**
  * Library entry point.
@@ -26,18 +30,33 @@ public final class Themis {
     private Themis() {
     }
 
-    /** Analyzers wired by default. New analyzers are registered here as phases land. */
+    /** Analyzers wired by default, using the production {@link Environment}. */
     public static List<Analyzer> defaultAnalyzers() {
-        return List.of(new JavaVersionAnalyzer());
+        return defaultAnalyzers(Environment.defaults());
     }
 
-    /** Engine resolving with Maven's defaults (~/.m2/settings.xml, local repository). */
+    /** Analyzers wired by default. New analyzers are registered here as phases land. */
+    public static List<Analyzer> defaultAnalyzers(Environment env) {
+        return List.of(new JavaVersionAnalyzer(), LicenseAnalyzer.create(env.cacheDir(), env.depsDevBaseUrl()));
+    }
+
+    /** Names accepted by {@code --only} and the {@code analyzers} key of .themis.yml. */
+    public static Set<String> analyzerNames() {
+        return defaultAnalyzers(Environment.defaults()).stream().map(Analyzer::name).collect(Collectors.toUnmodifiableSet());
+    }
+
+    /** Engine with Maven's defaults (~/.m2/settings.xml, local repository), ~/.themis/cache and deps.dev. */
     public static ScanEngine defaultEngine() {
-        return defaultEngine(ResolverOptions.defaults());
+        return defaultEngine(Environment.defaults());
     }
 
+    public static ScanEngine defaultEngine(Environment env) {
+        return new ScanEngine(new MavenDependencyResolver(env.resolver()), defaultAnalyzers(env), VERSION);
+    }
+
+    /** Default environment, but with these Maven resolver options. */
     public static ScanEngine defaultEngine(ResolverOptions options) {
-        return new ScanEngine(new MavenDependencyResolver(options), defaultAnalyzers(), VERSION);
+        return defaultEngine(Environment.defaults().withResolver(options));
     }
 
     public static ScanReport scan(Path projectDir, ScanConfig config) {
@@ -53,5 +72,13 @@ public final class Themis {
         try (ProjectSession session = new MavenDependencyResolver(options).open(projectDir, config)) {
             return session.resolveDependencies();
         }
+    }
+
+    /**
+     * Runs only the license analyzer, as {@code themis licenses} does; the {@link LicenseInfo} of every
+     * dependency is in {@code report.dataOf(LicenseInfo.class)}.
+     */
+    public static ScanReport licenses(Path projectDir, ScanConfig config, Environment env) {
+        return defaultEngine(env).scan(projectDir, config.withEnabledAnalyzers(Set.of(LicenseAnalyzer.NAME)));
     }
 }
