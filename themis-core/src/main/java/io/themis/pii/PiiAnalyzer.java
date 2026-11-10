@@ -155,9 +155,11 @@ public final class PiiAnalyzer implements Analyzer {
             rec.getParameters().forEach(p -> vocab.match(p.getNameAsString()).ifPresent(m -> out.add(p.getNameAsString())));
         }
         if (type instanceof ClassOrInterfaceDeclaration cls && !cls.isInterface()) {
-            if (lombokToString(cls)) {
+            Optional<Boolean> explicitOnly = lombokToString(cls);
+            if (explicitOnly.isPresent()) {
                 for (FieldDeclaration fd : cls.getFields()) {
                     if (fd.isStatic() || hasAnnotation(fd.getAnnotations(), "Exclude")) continue;
+                    if (explicitOnly.get() && !hasAnnotation(fd.getAnnotations(), "Include")) continue;
                     fd.getVariables().forEach(v -> vocab.match(v.getNameAsString()).ifPresent(m -> out.add(v.getNameAsString())));
                 }
             }
@@ -171,18 +173,19 @@ public final class PiiAnalyzer implements Analyzer {
         return List.copyOf(out);
     }
 
-    private static boolean lombokToString(ClassOrInterfaceDeclaration cls) {
+    /** Empty: no Lombok toString. Otherwise whether it prints only {@code @ToString.Include} fields. An explicit @ToString wins over @Data/@Value. */
+    private static Optional<Boolean> lombokToString(ClassOrInterfaceDeclaration cls) {
+        boolean generated = false;
         for (AnnotationExpr a : cls.getAnnotations()) {
             String n = a.getNameAsString();
             String simple = n.substring(n.lastIndexOf('.') + 1);
-            if (simple.equals("Data") || (simple.equals("Value") && !n.startsWith("org.springframework"))) return true;
             if (simple.equals("ToString")) {
-                boolean explicitOnly = a instanceof NormalAnnotationExpr na && na.getPairs().stream()
-                        .anyMatch(p -> p.getNameAsString().equals("onlyExplicitlyIncluded") && p.getValue().toString().equals("true"));
-                return !explicitOnly;
+                return Optional.of(a instanceof NormalAnnotationExpr na && na.getPairs().stream()
+                        .anyMatch(p -> p.getNameAsString().equals("onlyExplicitlyIncluded") && p.getValue().toString().equals("true")));
             }
+            if (simple.equals("Data") || (simple.equals("Value") && !n.startsWith("org.springframework"))) generated = true;
         }
-        return false;
+        return generated ? Optional.of(false) : Optional.empty();
     }
 
     private static boolean hasAnnotation(NodeList<AnnotationExpr> annotations, String simpleName) {

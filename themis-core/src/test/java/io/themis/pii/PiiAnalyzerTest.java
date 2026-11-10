@@ -88,11 +88,13 @@ class PiiAnalyzerTest {
         java("D", "package com.acme;\nrecord D(String dateOfBirth, int age) {}\n");
         java("E", "package com.acme;\nclass E { String ifsc; public String toString() { return \"E \" + ifsc; } }\n");
         java("F", "package com.acme;\n@lombok.Getter class F { String email; }\n");
+        java("G", "package com.acme;\n@lombok.Data @lombok.ToString(onlyExplicitlyIncluded = true) class G { @lombok.ToString.Include Long id; String email; }\n");
+        java("H", "package com.acme;\n@lombok.Data @lombok.ToString(onlyExplicitlyIncluded = true) class H { @lombok.ToString.Include String email; String city; }\n");
 
         List<Finding> f = scan();
 
         assertThat(f).extracting(x -> x.location().orElseThrow().file().getFileName().toString())
-                .containsExactlyInAnyOrder("A.java", "D.java", "E.java");
+                .containsExactlyInAnyOrder("A.java", "D.java", "E.java", "H.java");
         assertThat(f).allMatch(x -> x.evidence().get("rule").equals("pii-tostring") && x.severity() == Severity.MEDIUM);
     }
 
