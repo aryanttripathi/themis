@@ -515,3 +515,12 @@ Resolution warnings (missing/invalid transitive POMs, undecryptable passwords) a
 - `.themis.yml`: `licenses.severity` (category -> severity or NONE), `licenses.overrides`, `licenses.allowArtifacts`, `failOn.severity`, `network.offline`, `network.cacheTtlHours`, `analyzers`, `javaRelease`. Unknown keys fail with exit 2. Precedence: CLI flags > `--config FILE` or project `.themis.yml` > defaults.
 - CLI: `themis licenses [DIR]`, `scan` prints a `Licenses :` summary, `--config`, locale-independent `--fail-on`. JSON report: `license {spdx, category, source}` per dependency.
 - Verified on real projects: Spring Boot sample, `/tmp/rev/edge` (23/23 detected) and a copyleft mix (iText AGPL, MySQL GPL + FOSS exception, logback/H2/Jakarta dual licenses): 12/12 detected and classified correctly.
+
+## 19. Gradle support: done
+
+- `AutoDetectingResolver` picks Maven when `pom.xml` exists, else Gradle (`settings.gradle[.kts]` / `build.gradle[.kts]`).
+- `GradleDependencyResolver` runs the project's own Gradle (`sh ./gradlew`, else `gradle` on PATH) with the bundled `themis-init.gradle`, which registers `themisDependencies` and writes JSON: per project, the resolved `compileClasspath`, `runtimeClasspath` (and `testRuntimeClasspath` with `--include-test`), jar paths from Gradle's cache, POM `<licenses>` (walking up to 5 parent POMs through Gradle), unresolved dependencies. It only resolves configurations; nothing is compiled.
+- Scope mapping: compile+runtime -> COMPILE, runtime only -> RUNTIME, compileOnly -> PROVIDED, test only -> TEST. Subprojects merge like Maven modules; sibling projects and platforms/BOMs are never reported.
+- Uses Gradle's own resolution, repositories and credentials (`~/.gradle/gradle.properties`), so it matches `./gradlew dependencies`.
+- Trust: it executes the project's build scripts.
+- Verified with Gradle 6.9.1 (Spring Boot 2.4, JDK 11), 7.6.1 (Spring Boot 3.0 multi-project, JDK 17) and 8.14 (tests).

@@ -14,6 +14,8 @@ class SpdxNormalizerTest {
     /** Names as found in real POMs (see docs/LLD.md section 5 for where they were collected). */
     @ParameterizedTest(name = "{0} -> {1}")
     @CsvSource(delimiter = '|', textBlock = """
+            The GNU General Public License, v2 with FOSS exception | GPL-2.0-only WITH Universal-FOSS-exception-1.0
+            GNU General Public License, v2 with FOSS exception | GPL-2.0-only WITH Universal-FOSS-exception-1.0
             The Apache Software License, Version 2.0                                  | Apache-2.0
             Apache License, Version 2.0                                               | Apache-2.0
             The Apache License, Version 2.0                                           | Apache-2.0

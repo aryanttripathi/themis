@@ -51,7 +51,7 @@ public final class Themis {
     }
 
     public static ScanEngine defaultEngine(Environment env) {
-        return new ScanEngine(new MavenDependencyResolver(env.resolver()), defaultAnalyzers(env), VERSION);
+        return new ScanEngine(env.dependencyResolver(), defaultAnalyzers(env), VERSION);
     }
 
     /** Default environment, but with these Maven resolver options. */
@@ -69,7 +69,12 @@ public final class Themis {
      * @throws io.themis.resolve.ResolutionException if dependencies cannot be resolved
      */
     public static DependencyGraph resolve(Path projectDir, ScanConfig config, ResolverOptions options) {
-        try (ProjectSession session = new MavenDependencyResolver(options).open(projectDir, config)) {
+        return resolve(projectDir, config, Environment.defaults().withResolver(options));
+    }
+
+    /** Resolves a Maven or Gradle project's dependency graph (no analyzers). */
+    public static DependencyGraph resolve(Path projectDir, ScanConfig config, Environment env) {
+        try (ProjectSession session = env.dependencyResolver().open(projectDir, config)) {
             return session.resolveDependencies();
         }
     }

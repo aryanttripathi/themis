@@ -1,0 +1,189 @@
+// Themis init script: dumps the resolved dependency graph of every project in the build as JSON.
+// Runs inside the user's own Gradle (6.9+), so conflict resolution, platforms/BOMs, the Spring
+// dependency-management plugin, repositories and credentials are exactly what the build uses.
+// Only resolves configurations; never compiles or runs tasks of the project.
+//
+// Inputs (project properties): themis.output = file to write, themis.includeTest = true|false
+import groovy.json.JsonOutput
+import org.gradle.api.artifacts.component.ModuleComponentIdentifier
+import org.gradle.api.artifacts.component.ProjectComponentIdentifier
+import org.gradle.api.artifacts.result.ResolvedDependencyResult
+import org.gradle.api.artifacts.result.UnresolvedDependencyResult
+import org.gradle.maven.MavenModule
+import org.gradle.maven.MavenPomArtifact
+
+gradle.rootProject { root ->
+    def task = root.tasks.register('themisDependencies') {
+        doLast {
+            def out = root.findProperty('themis.output')
+            if (!out) throw new GradleException('themis.output not set')
+            boolean includeTest = 'true' == String.valueOf(root.findProperty('themis.includeTest'))
+
+            def coord = { p -> [group: String.valueOf(p.group ?: ''), name: p.name, version: String.valueOf(p.version ?: '')] }
+            def gav = { ModuleComponentIdentifier id -> "${id.group}:${id.module}:${id.version}".toString() }
+            def projectGav = { ProjectComponentIdentifier id ->
+                def p = root.findProject(id.projectPath)
+                def c = coord(p ?: root)
+                "${c.group}:${c.name}:${c.version}".toString()
+            }
+
+            def configNames = ['compileClasspath', 'runtimeClasspath']
+            if (includeTest) configNames << 'testRuntimeClasspath'
+
+            def projects = []
+            def unresolved = []
+            def moduleIds = [:]                 // ModuleComponentIdentifier -> project that resolved it (its repositories)
+
+            root.allprojects.each { p ->
+                def c = coord(p)
+                def selfGav = "${c.group}:${c.name}:${c.version}".toString()
+                def entry = [path: p.path, coordinate: c, sourceDirs: [], configurations: [:]]
+                def sourceSets = p.extensions.findByName('sourceSets')
+                if (sourceSets != null && sourceSets.findByName('main') != null) {
+                    entry.sourceDirs = sourceSets.main.java.srcDirs.collect { it.absolutePath }
+                    entry.resourceDirs = sourceSets.main.resources.srcDirs.collect { it.absolutePath }
+                }
+                entry.javaRelease = javaRelease(p)
+
+                configNames.each { name ->
+                    def conf = p.configurations.findByName(name)
+                    if (conf == null || !conf.canBeResolved) return
+                    def nodes = [:]               // gav -> [direct, path]
+                    def files = [:]               // gav -> [absolute file paths]
+                    def rootResult = conf.incoming.resolutionResult.root
+                    def queue = new ArrayDeque()
+                    def seen = [] as Set
+                    rootResult.dependencies.each { queue.add([it, [selfGav], true]) }
+                    while (!queue.isEmpty()) {
+                        def (dep, path, direct) = queue.poll()
+                        if (dep instanceof UnresolvedDependencyResult) {
+                            unresolved << [project: p.path, configuration: name,
+                                           requested: dep.requested.displayName, reason: String.valueOf(dep.failure?.message)]
+                            continue
+                        }
+                        if (!(dep instanceof ResolvedDependencyResult)) continue
+                        def selected = dep.selected
+                        def id = selected.id
+                        String key
+                        if (id instanceof ModuleComponentIdentifier) {
+                            key = gav(id)
+                            if (!isPlatform(dep, selected)) {     // BOMs/platforms only manage versions: not shipped
+                                moduleIds.putIfAbsent(id, p)
+                                if (!nodes.containsKey(key)) nodes[key] = [direct: direct, path: path + [key]]
+                            }
+                        } else if (id instanceof ProjectComponentIdentifier) {
+                            key = projectGav(id)       // sibling project: walk through, never report it
+                        } else {
+                            continue
+                        }
+                        if (!seen.add(id)) continue
+                        selected.dependencies.each { queue.add([it, path + [key], false]) }
+                    }
+                    conf.incoming.artifactView { lenient = true }.artifacts.each { a ->
+                        def cid = a.id.componentIdentifier
+                        if (cid instanceof ModuleComponentIdentifier) {
+                            files.computeIfAbsent(gav(cid)) { [] } << a.file.absolutePath
+                        }
+                    }
+                    entry.configurations[name] = nodes.collect { k, v -> [coordinate: k, direct: v.direct, path: v.path, files: files[k] ?: []] }
+                }
+                projects << entry
+            }
+
+            def poms = [:]
+            moduleIds.groupBy { it.value }.each { proj, entries -> poms.putAll(pomLicenses(proj, entries.keySet())) }
+            def rc = coord(root)
+            def result = [root: rc, projects: projects, unresolved: unresolved, licenses: poms]
+            new File(out.toString()).text = JsonOutput.toJson(result)
+        }
+    }
+    task.configure { t ->
+        if (t.metaClass.respondsTo(t, 'notCompatibleWithConfigurationCache', String)) {
+            t.notCompatibleWithConfigurationCache('Themis reads the resolved dependency graph')
+        }
+    }
+}
+
+/** True for platform/BOM components (variant category platform or enforced-platform). */
+def isPlatform(dep, selected) {
+    def categoryOf = { container ->
+        try {
+            def attrs = container.attributes
+            def key = attrs.keySet().find { it.name == 'org.gradle.category' }
+            return key == null ? null : String.valueOf(attrs.getAttribute(key))
+        } catch (ignored) {
+            return null
+        }
+    }
+    def categories = []
+    try { categories << categoryOf(dep.requested) } catch (ignored) { }
+    try { if (dep.respondsTo('getResolvedVariant')) categories << categoryOf(dep.resolvedVariant) } catch (ignored) { }
+    try { selected.variants.each { categories << categoryOf(it) } } catch (ignored) { }
+    return categories.any { it == 'platform' || it == 'enforced-platform' }
+}
+
+/** Java release of a project: toolchain language version, else targetCompatibility; null if not a Java project. */
+def javaRelease(p) {
+    def java = p.extensions.findByName('java')
+    if (java == null) return null
+    try {
+        def lv = java.toolchain?.languageVersion
+        if (lv != null && lv.isPresent()) return lv.get().asInt()
+    } catch (ignored) {
+    }
+    try {
+        return Integer.parseInt(java.targetCompatibility.majorVersion)
+    } catch (ignored) {
+        return null
+    }
+}
+
+/** POM {@code <licenses>} per module, walking up to 5 parent POMs (also resolved through Gradle). */
+def pomLicenses(root, Collection ids) {
+    def result = [:]
+    def pomFiles = resolvePoms(root, ids)
+    ids.each { id ->
+        def key = "${id.group}:${id.module}:${id.version}".toString()
+        def file = pomFiles[key]
+        if (file == null) { result[key] = [licenses: [], inherited: false, problem: 'POM not available']; return }
+        def inherited = false
+        def current = file
+        for (int depth = 0; depth < 6 && current != null; depth++) {
+            def pom
+            try {
+                pom = new XmlSlurper(false, false, false).parse(current)   // no DTDs: POMs are untrusted
+            } catch (Exception e) {
+                result[key] = [licenses: [], inherited: inherited, problem: "unreadable POM: ${e.message}".toString()]
+                break
+            }
+            def lics = pom.licenses.license.collect { [name: it.name.text().trim(), url: it.url.text().trim()] }
+            if (!lics.isEmpty()) { result[key] = [licenses: lics, inherited: inherited]; break }
+            def parent = pom.parent
+            if (parent.size() == 0 || !parent.artifactId.text()) { result[key] = [licenses: [], inherited: false]; break }
+            def pg = parent.groupId.text().trim(), pa = parent.artifactId.text().trim(), pv = parent.version.text().trim()
+            current = resolvePoms(root, [[group: pg, module: pa, version: pv]])["${pg}:${pa}:${pv}".toString()]
+            inherited = true
+            if (current == null) result[key] = [licenses: [], inherited: false, problem: "parent POM ${pg}:${pa}:${pv} not available".toString()]
+        }
+        if (!result.containsKey(key)) result[key] = [licenses: [], inherited: false]
+    }
+    return result
+}
+
+def resolvePoms(root, Collection ids) {
+    def files = [:]
+    if (ids.isEmpty()) return files
+    def query = root.dependencies.createArtifactResolutionQuery()
+    ids.each { id ->
+        if (id instanceof ModuleComponentIdentifier) query.forComponents(id) else query.forModule(id.group, id.module, id.version)
+    }
+    query.withArtifacts(MavenModule, MavenPomArtifact).execute().resolvedComponents.each { c ->
+        def cid = c.id
+        c.getArtifacts(MavenPomArtifact).each { a ->
+            if (a.hasProperty('file')) {
+                try { files["${cid.group}:${cid.module}:${cid.version}".toString()] = a.file } catch (ignored) { }
+            }
+        }
+    }
+    return files
+}

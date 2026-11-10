@@ -1,5 +1,12 @@
 package io.themis;
 
+import io.themis.resolve.AutoDetectingResolver;
+import io.themis.resolve.DependencyResolver;
+import io.themis.resolve.gradle.GradleDependencyResolver;
+import io.themis.resolve.gradle.GradleOptions;
+import io.themis.resolve.maven.MavenDependencyResolver;
+import java.util.List;
+
 import io.themis.cache.FileCache;
 import io.themis.license.DepsDevClient;
 import io.themis.resolve.maven.ResolverOptions;
@@ -17,12 +24,23 @@ import java.util.Objects;
  * @param cacheDir       root of the network-answer cache ({@code ~/.themis/cache})
  * @param depsDevBaseUrl deps.dev API base URL
  */
-public record Environment(ResolverOptions resolver, Path cacheDir, URI depsDevBaseUrl) {
+public record Environment(ResolverOptions resolver, Path cacheDir, URI depsDevBaseUrl, GradleOptions gradle) {
 
     public Environment {
         Objects.requireNonNull(resolver, "resolver");
         Objects.requireNonNull(cacheDir, "cacheDir");
         Objects.requireNonNull(depsDevBaseUrl, "depsDevBaseUrl");
+        Objects.requireNonNull(gradle, "gradle");
+    }
+
+    /** Default Gradle options (project wrapper, the user's GRADLE_USER_HOME). */
+    public Environment(ResolverOptions resolver, Path cacheDir, URI depsDevBaseUrl) {
+        this(resolver, cacheDir, depsDevBaseUrl, GradleOptions.defaults());
+    }
+
+    /** Maven and Gradle resolution, chosen per project (pom.xml wins). */
+    public DependencyResolver dependencyResolver() {
+        return new AutoDetectingResolver(List.of(new MavenDependencyResolver(resolver), new GradleDependencyResolver(gradle)));
     }
 
     /** Maven defaults, {@code ~/.themis/cache} (or {@code -Dthemis.cache.dir}), https://api.deps.dev/. */
@@ -31,6 +49,6 @@ public record Environment(ResolverOptions resolver, Path cacheDir, URI depsDevBa
     }
 
     public Environment withResolver(ResolverOptions options) {
-        return new Environment(options, cacheDir, depsDevBaseUrl);
+        return new Environment(options, cacheDir, depsDevBaseUrl, gradle);
     }
 }
