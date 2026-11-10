@@ -92,7 +92,7 @@ public final class LicenseAnalyzer implements Analyzer {
         if (!info.notes().isEmpty()) evidence.put("notes", String.join(" | ", info.notes()));
 
         // Id per artifact+version: several versions of one artifact (multi-module) are separate findings.
-        String id = FindingType.LICENSE + ":" + info.category() + ":" + d.coordinate();
+        String id = FindingType.LICENSE + ":" + info.category() + ":" + d.coordinate().ga();   // stable across version bumps (baselines)
         return new Finding(id, FindingType.LICENSE, severity, title, obligation(info.category()) + scopeNote(d.scope()),
                 Optional.of(d.coordinate()), Optional.empty(), evidence);
     }

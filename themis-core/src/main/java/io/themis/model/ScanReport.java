@@ -19,17 +19,24 @@ public record ScanReport(
         DependencyGraph graph,
         List<Finding> findings,
         List<AnalyzerError> errors,
-        List<Object> data) {
+        List<Object> data,
+        List<SuppressedFinding> suppressed) {
 
     public ScanReport {
         findings = List.copyOf(findings);
         errors = List.copyOf(errors);
         data = List.copyOf(data);
+        suppressed = List.copyOf(suppressed);
     }
 
     public ScanReport(String toolVersion, Instant startedAt, Duration duration, ProjectInfo project,
                       DependencyGraph graph, List<Finding> findings, List<AnalyzerError> errors) {
         this(toolVersion, startedAt, duration, project, graph, findings, errors, List.of());
+    }
+
+    public ScanReport(String toolVersion, Instant startedAt, Duration duration, ProjectInfo project,
+                      DependencyGraph graph, List<Finding> findings, List<AnalyzerError> errors, List<Object> data) {
+        this(toolVersion, startedAt, duration, project, graph, findings, errors, data, List.of());
     }
 
     /** Analyzer outputs of one type, e.g. {@code dataOf(LicenseInfo.class)}. */

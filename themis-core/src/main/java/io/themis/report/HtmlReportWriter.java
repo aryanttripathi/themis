@@ -195,6 +195,8 @@ public final class HtmlReportWriter implements ReportWriter {
         }
         m.put("dependencies", depRows);
         m.put("warnings", r.graph().warnings());
+        m.put("suppressed", r.suppressed().stream().map(x -> Map.of("id", x.finding().id(), "title", x.finding().title(),
+                "severity", x.finding().severity().name(), "type", x.finding().type().name(), "reason", x.reason())).toList());
         m.put("errors", r.errors().stream().map(e -> Map.of("analyzer", e.analyzer(), "message", e.message())).toList());
         return m;
     }

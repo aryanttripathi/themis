@@ -69,6 +69,13 @@ public final class ConfigLoader {
         public ReportDto report;
         public SecretsDto secrets;
         public PiiDto pii;
+        public List<SuppressDto> suppress;
+    }
+
+    static final class SuppressDto {
+        public String id;
+        public String reason;
+        public String until;
     }
 
     static final class SecretsDto {
@@ -215,7 +222,28 @@ public final class ConfigLoader {
         return new ConfigFile(file, dto.javaRelease == null ? OptionalInt.empty() : OptionalInt.of(dto.javaRelease),
                 analyzers, failOn, severities, silenced, overrides, allow, offline, ttl, privacy(dto.privacy),
                 Optional.ofNullable(dto.report).map(x -> x.consoleLimit), Optional.ofNullable(dto.report).map(x -> x.open),
-                source(dto.secrets, dto.pii));
+                source(dto.secrets, dto.pii), suppressions(file, dto.suppress));
+    }
+
+    private static List<io.themis.suppress.Suppression> suppressions(Path file, List<SuppressDto> list) {
+        if (list == null) return List.of();
+        List<io.themis.suppress.Suppression> out = new java.util.ArrayList<>();
+        for (int i = 0; i < list.size(); i++) {
+            SuppressDto d = list.get(i);
+            String where = file + ": suppress[" + i + "]";
+            if (d == null || d.id == null || d.id.isBlank()) throw new ConfigException(where + ": 'id' is required");
+            if (d.reason == null || d.reason.isBlank()) throw new ConfigException(where + " (" + d.id + "): 'reason' is required");
+            Optional<java.time.LocalDate> until = Optional.empty();
+            if (d.until != null) {
+                try {
+                    until = Optional.of(java.time.LocalDate.parse(d.until.trim()));
+                } catch (java.time.format.DateTimeParseException e) {
+                    throw new ConfigException(where + " (" + d.id + "): 'until' must be a date like 2027-03-31, got '" + d.until + "'");
+                }
+            }
+            out.add(new io.themis.suppress.Suppression(d.id.trim(), d.reason.trim(), until));
+        }
+        return out;
     }
 
     /** secrets.exclude and pii.exclude both apply to the source scan; pii.extraFields / ignoreFields tune the vocabulary. */

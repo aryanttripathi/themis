@@ -81,7 +81,9 @@ public final class OsvClient {
                 q.putObject("package").put("ecosystem", "Maven").put("name", c.ga());
                 q.put("version", c.version());
             }
-            JsonNode results = send(post("v1/querybatch", MAPPER.writeValueAsString(body))).path("results");
+            JsonNode response = send(post("v1/querybatch", MAPPER.writeValueAsString(body)));
+            if (response == null) throw new IOException("OSV batch query endpoint not found (HTTP 404) at " + baseUrl);
+            JsonNode results = response.path("results");
             for (int i = 0; i < chunk.size(); i++) {
                 List<String> ids = new ArrayList<>();
                 results.path(i).path("vulns").forEach(v -> ids.add(v.path("id").asText()));

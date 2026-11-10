@@ -35,6 +35,7 @@ class LicensesCommandTest {
         repo.publish("com.acme:mystery:1.0", "jar", "");           // nobody knows
         repo.publish("com.acme:test-gpl:1.0", "jar", licenses("GPLv3"));
         depsDev.depsDev("org.thirdparty:from-depsdev:1.0", "Apache-2.0");
+        depsDev.on("/v1/querybatch", new HttpStub.Response(200, "{\"results\":[]}"));   // OSV: no known vulnerabilities
         app = repo.project(tmp.resolve("app"), "com.acme:app:1.0", deps("com.acme:mit-lib:1.0", "com.acme:agpl-lib:1.0",
                 "com.acme:weak-lib:1.0", "org.thirdparty:from-depsdev:1.0", "com.acme:mystery:1.0", "com.acme:test-gpl:1.0:test"));
         cli = new CliHarness(repo, tmp, depsDev.baseUrl());
@@ -210,6 +211,44 @@ class LicensesCommandTest {
 
         assertThat(out.resolve("report.html")).exists();
         assertThat(cli.out()).contains("[HIGH    ]").contains("HTML report:");
+    }
+
+    @Test
+    void baselineAcceptsTodaysFindingsSoOnlyNewOnesFailTheBuild() throws Exception {
+        assertThat(cli.run("scan", app.toString())).isEqualTo(ThemisCli.EXIT_FINDINGS);
+
+        assertThat(cli.run("baseline", app.toString())).isEqualTo(ThemisCli.EXIT_OK);
+        assertThat(app.resolve(".themis-baseline.json")).exists();
+        assertThat(cli.out()).contains("Baseline written");
+
+        cli.out.getBuffer().setLength(0);
+        assertThat(cli.run("scan", app.toString())).isEqualTo(ThemisCli.EXIT_OK);
+        assertThat(cli.out()).containsPattern("Suppressed\\s+: \\d+ \\(\\d+ baseline, 0 suppress\\)").doesNotContain("[HIGH    ]");
+
+        assertThat(cli.run("scan", app.toString(), "--no-baseline")).isEqualTo(ThemisCli.EXIT_FINDINGS);
+    }
+
+    @Test
+    void suppressEntriesInConfigHideFindingsWithAReason() throws Exception {
+        Files.writeString(app.resolve(".themis.yml"), """
+                suppress:
+                  - id: "LICENSE:NETWORK_COPYLEFT:com.acme:agpl-lib"
+                    reason: "internal tool, never offered over a network"
+                """);
+
+        int exit = cli.run("scan", app.toString());
+
+        assertThat(exit).isEqualTo(ThemisCli.EXIT_OK);
+        assertThat(cli.out()).contains("Suppressed   : 1 (0 baseline, 1 suppress)").doesNotContain("agpl-lib:1.0 is");
+    }
+
+    @Test
+    void sarifFormatWritesACodeScanningFile() throws Exception {
+        Path out = tmp.resolve("sarif");
+        cli.run("scan", app.toString(), "--format", "sarif", "--output", out.toString());
+
+        assertThat(Files.readString(out.resolve("themis.sarif"))).contains("\"version\" : \"2.1.0\"").contains("license/network-copyleft");
+        assertThat(cli.out()).contains("SARIF report: ");
     }
 
     private static String licenses(String name) {

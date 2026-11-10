@@ -91,6 +91,7 @@
     <button data-tab="code">Secrets &amp; PII</button>
     <button data-tab="licenses">Licenses</button>
     <button data-tab="dependencies">Dependencies</button>
+    <button data-tab="suppressed">Suppressed</button>
     <button data-tab="warnings">Warnings</button>
   </nav>
   <div class="toolbar">
@@ -236,6 +237,15 @@
         return kv([["Pulled in via", (r.path || []).length > 2 ? list(r.path) : (r.direct ? "declared directly" : "")], ["Modules", (r.modules || []).join(", ")],
                    ["License", r.spdx], ["Jar", r.jar ? el("span", {"class": "mono"}, r.jar) : ""]]);
       }
+    },
+    suppressed: {
+      rows: data.suppressed || [], sev: function (r) { return r.severity; },
+      cols: [["Severity", function (r) { return pill(r.severity); }, function (r) { return sevRank(r.severity); }],
+             ["Type", function (r) { return label(r.type); }, function (r) { return r.type; }],
+             ["Finding", function (r) { return r.title; }, function (r) { return r.title; }],
+             ["Why", function (r) { return r.reason; }, function (r) { return r.reason; }]],
+      text: function (r) { return [r.title, r.reason, r.id].join(" "); },
+      detail: function (r) { return kv([["Id (for suppress:)", el("span", {"class": "mono"}, r.id)], ["Why hidden", r.reason]]); }
     },
     warnings: {
       rows: data.warnings.map(function (w) { return {text: w, kind: "warning"}; }).concat(data.errors.map(function (e) { return {text: e.analyzer + ": " + e.message, kind: "error"}; })),

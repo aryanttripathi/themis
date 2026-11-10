@@ -124,7 +124,7 @@ class LicenseAnalyzerTest {
         assertThat(f.type()).isEqualTo(FindingType.LICENSE);
         assertThat(f.title()).isEqualTo("com.itextpdf:kernel:8.0.5 is AGPL-3.0-only (network copyleft)");
         assertThat(f.detail()).contains("network");
-        assertThat(f.id()).isEqualTo("LICENSE:NETWORK_COPYLEFT:com.itextpdf:kernel:8.0.5");
+        assertThat(f.id()).isEqualTo("LICENSE:NETWORK_COPYLEFT:com.itextpdf:kernel");
         assertThat(f.dependency()).contains(Coordinate.parse("com.itextpdf:kernel:8.0.5"));
         assertThat(f.evidence()).containsEntry("spdx", "AGPL-3.0-only")
                 .containsEntry("category", "NETWORK_COPYLEFT")

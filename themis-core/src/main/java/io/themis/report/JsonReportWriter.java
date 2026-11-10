@@ -70,6 +70,8 @@ public final class JsonReportWriter implements ReportWriter {
         doc.put("warnings", r.graph().warnings());
         doc.put("findings", r.findings());
         doc.put("errors", r.errors());
+        doc.put("suppressed", r.suppressed().stream().map(x -> Map.of("id", x.finding().id(), "title", x.finding().title(),
+                "severity", x.finding().severity().name(), "reason", x.reason())).toList());
         return doc;
     }
 

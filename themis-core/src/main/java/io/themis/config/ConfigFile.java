@@ -7,6 +7,7 @@ import java.nio.file.Path;
 import java.util.EnumMap;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.OptionalInt;
@@ -35,20 +36,22 @@ public record ConfigFile(
         Optional<io.themis.privacy.PrivacyConfig> privacy,
         Optional<Integer> consoleLimit,
         Optional<Boolean> openReport,
-        Optional<io.themis.source.SourceConfig> sourceScan) {
+        Optional<io.themis.source.SourceConfig> sourceScan,
+        List<io.themis.suppress.Suppression> suppressions) {
 
     public ConfigFile {
         analyzers = analyzers.map(Set::copyOf);
         licenseSeverities = Map.copyOf(licenseSeverities);
         silencedLicenses = Set.copyOf(silencedLicenses);
         overrides = Map.copyOf(overrides);
+        suppressions = List.copyOf(suppressions);
         allowArtifacts = Set.copyOf(allowArtifacts);
     }
 
     /** A file without any setting. */
     public static ConfigFile empty(Path source) {
         return new ConfigFile(source, OptionalInt.empty(), Optional.empty(), Optional.empty(), Map.of(), Set.of(),
-                Map.of(), Set.of(), Optional.empty(), OptionalInt.empty(), Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty());
+                Map.of(), Set.of(), Optional.empty(), OptionalInt.empty(), Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty(), List.of());
     }
 
     /**

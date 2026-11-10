@@ -193,7 +193,7 @@ public final class UpgradeAdvisor implements Analyzer {
         if (s.recommended().isPresent()) {
             severity = Severity.INFO;
             title = "Upgrade " + c.ga() + " " + c.version() + " -> " + s.recommended().get() + " (fixes " + n
-                    + s.requiredJavaRelease().map(j -> "; runs on Java " + j + "+").orElse("") + ")";
+                    + s.requiredJavaRelease().map(j -> "; runs on Java " + javaName(j) + "+").orElse("") + ")";
         } else {
             severity = s.requiredJavaRelease().isPresent() ? Severity.MEDIUM : Severity.LOW;
             title = "No safe upgrade for " + c.ga() + " " + c.version() + " on Java " + java
@@ -223,6 +223,11 @@ public final class UpgradeAdvisor implements Analyzer {
 
     private static String major(String version) {
         return version.split("[.-]")[0].toLowerCase(Locale.ROOT);
+    }
+
+    /** Java releases before 5 were called 1.x (1.3, 1.4). */
+    static String javaName(int release) {
+        return release < 5 ? "1." + release : String.valueOf(release);
     }
 
     private static String gav(Coordinate c) {

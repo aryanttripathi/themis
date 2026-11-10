@@ -34,7 +34,7 @@ final class ScanCommand implements Callable<Integer> {
     Path projectDir;
 
     @Option(names = "--format", split = ",", defaultValue = "console",
-            description = "Output formats: console, json, html (default: ${DEFAULT-VALUE}).")
+            description = "Output formats: console, json, html, sarif (default: ${DEFAULT-VALUE}).")
     List<String> formats;
 
     @Option(names = "--output", defaultValue = "themis-report",
@@ -57,6 +57,12 @@ final class ScanCommand implements Callable<Integer> {
 
     @Option(names = "--no-open", description = "Do not open the HTML report in a browser.")
     boolean noOpen;
+
+    @Option(names = "--baseline", description = "Baseline file (default: DIR/.themis-baseline.json): its findings are not reported.")
+    Path baseline;
+
+    @Option(names = "--no-baseline", description = "Ignore the baseline and report every finding.")
+    boolean noBaseline;
 
     @Option(names = "--java-release", description = "Override the Java release detected from the POM.")
     Integer javaRelease;
@@ -82,6 +88,7 @@ final class ScanCommand implements Callable<Integer> {
 
         ScanReport report = Themis.defaultEngine(parent.environment().withResolver(resolver.apply(parent.environment().resolver())))
                 .scan(projectDir, cfg);
+        report = Suppressions.apply(report, projectDir, config, baseline, noBaseline);
         PrintWriter out = spec.commandLine().getOut();
 
         ReportOutput.Settings rs = ReportOutput.settings(projectDir, config, consoleLimit, noOpen);
@@ -97,6 +104,7 @@ final class ScanCommand implements Callable<Integer> {
                     }
                 }
                 case "html" -> ReportOutput.writeHtml(report, outputDir, rs.open(), out);
+                case "sarif" -> out.println("SARIF report: " + new io.themis.report.SarifReportWriter().write(report, outputDir).toAbsolutePath());
                 case "json" -> out.println("JSON report: " + new JsonReportWriter().write(report, outputDir));
                 default -> {
                     spec.commandLine().getErr().println("error: unsupported format '" + format + "'");
@@ -120,6 +128,7 @@ final class ScanCommand implements Callable<Integer> {
         if (!r.dataOf(io.themis.vuln.DependencyVulnerabilities.class).isEmpty()) {
             out.println("Vulnerable   : " + VulnsCommand.summary(r.dataOf(io.themis.vuln.DependencyVulnerabilities.class)));
         }
+        if (!r.suppressed().isEmpty()) out.println("Suppressed   : " + Suppressions.summary(r.suppressed()));
         Map<Severity, Long> counts = r.countBySeverity();
         out.printf(Locale.ROOT, "Findings     : %d critical, %d high, %d medium, %d low, %d info%n",
                 counts.get(Severity.CRITICAL), counts.get(Severity.HIGH), counts.get(Severity.MEDIUM),

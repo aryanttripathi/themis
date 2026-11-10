@@ -145,6 +145,25 @@ class ConfigLoaderTest {
                 .isInstanceOf(ConfigException.class).hasMessageContaining("licences").hasMessageContaining("javaversion");
     }
 
+    @Test
+    void suppressionsNeedAnIdAndAReasonAndAValidDate() throws IOException {
+        ConfigFile ok = ConfigLoader.read(write("a.yml", """
+                suppress:
+                  - id: "VULNERABILITY:GHSA-*:com.mysql:*"
+                    reason: "batch job only"
+                    until: 2027-03-31
+                  - id: "LICENSE:proprietary:org.json:json"
+                    reason: "legal approved"
+                """));
+        assertThat(ok.suppressions()).hasSize(2);
+        assertThat(ok.suppressions().get(0).until()).hasValue(java.time.LocalDate.of(2027, 3, 31));
+
+        assertThatThrownBy(() -> ConfigLoader.read(write("b.yml", "suppress:\n  - id: \"X\"\n")))
+                .isInstanceOf(ConfigException.class).hasMessageContaining("reason");
+        assertThatThrownBy(() -> ConfigLoader.read(write("c.yml", "suppress:\n  - id: \"X\"\n    reason: r\n    until: tomorrow\n")))
+                .isInstanceOf(ConfigException.class).hasMessageContaining("until");
+    }
+
     private Path write(String name, String content) throws IOException {
         return Files.writeString(dir.resolve(name), content);
     }
