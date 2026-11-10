@@ -155,6 +155,15 @@ def javaRelease(p) {
 }
 
 /** POM {@code <licenses>} per module, walking up to 5 parent POMs (also resolved through Gradle). */
+// XmlSlurper lives in groovy.util on Groovy 2.5 (Gradle 6), groovy.xml on Groovy 4 (Gradle 9); Groovy 3 has both.
+// No validation, no namespaces, no DTDs: POMs are untrusted.
+def newXmlSlurper() {
+    def cls = ['groovy.xml.XmlSlurper', 'groovy.util.XmlSlurper'].findResult {
+        try { getClass().classLoader.loadClass(it) } catch (ClassNotFoundException ignored) { null }
+    }
+    cls.newInstance(false, false, false)
+}
+
 def pomLicenses(root, Collection ids) {
     def result = [:]
     def pomFiles = resolvePoms(root, ids)
@@ -167,7 +176,7 @@ def pomLicenses(root, Collection ids) {
         for (int depth = 0; depth < 6 && current != null; depth++) {
             def pom
             try {
-                pom = new XmlSlurper(false, false, false).parse(current)   // no DTDs: POMs are untrusted
+                pom = newXmlSlurper().parse(current)
             } catch (Exception e) {
                 result[key] = [licenses: [], inherited: inherited, problem: "unreadable POM: ${e.message}".toString()]
                 break

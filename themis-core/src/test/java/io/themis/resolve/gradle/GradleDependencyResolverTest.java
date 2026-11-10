@@ -138,6 +138,8 @@ class GradleDependencyResolverTest {
         repo.publish("com.acme:lang:1.0", "jar", "");
         repo.publish("com.acme:web:1.0", "jar", "");
         Path dir = Files.createDirectories(tmp.resolve("multi"));
+        Files.createDirectories(dir.resolve("core"));
+        Files.createDirectories(dir.resolve("app"));
         Files.writeString(dir.resolve("settings.gradle"), "rootProject.name = 'multi'\ninclude 'core', 'app'\n");
         Files.writeString(dir.resolve("build.gradle"), """
                 allprojects { group = 'com.acme'; version = '2.0' }
@@ -169,6 +171,7 @@ class GradleDependencyResolverTest {
         repo.publish("com.acme:c:1.5", "jar", "");
         repo.publish("com.acme:bom:1.0", "pom", "<dependencyManagement>" + deps("com.acme:c:1.5") + "</dependencyManagement>");
         Path dir = Files.createDirectories(tmp.resolve("bff"));
+        Files.createDirectories(dir.resolve("svc"));
         Files.writeString(dir.resolve("settings.gradle"), "rootProject.name = 'bff'\ninclude 'svc'\n");
         Files.writeString(dir.resolve("build.gradle"), """
                 allprojects {
@@ -196,7 +199,7 @@ class GradleDependencyResolverTest {
         try (ProjectSession session = resolver.open(dir, ScanConfig.defaults())) {
             assertThat(session.project().javaRelease()).isEqualTo(17);
             assertThat(session.project().coordinate()).isEqualTo(new Coordinate("com.acme", "svc", "1.0"));
-            assertThat(session.project().sourceRoots()).contains(dir.resolve("src/main/java"));
+            assertThat(session.project().sourceRoots()).contains(dir.toRealPath().resolve("src/main/java"));
         }
     }
 
