@@ -39,7 +39,8 @@ public final class Themis {
     public static List<Analyzer> defaultAnalyzers(Environment env) {
         return List.of(new JavaVersionAnalyzer(), LicenseAnalyzer.create(env.cacheDir(), env.depsDevBaseUrl()),
                 io.themis.vuln.VulnerabilityAnalyzer.create(env.cacheDir(), env.osvBaseUrl()),
-                io.themis.upgrade.UpgradeAdvisor.create(env.cacheDir(), env.depsDevBaseUrl(), env.osvBaseUrl(), env.mavenCentralUrl()));
+                io.themis.upgrade.UpgradeAdvisor.create(env.cacheDir(), env.depsDevBaseUrl(), env.osvBaseUrl(), env.mavenCentralUrl()),
+                new io.themis.secrets.SecretAnalyzer(), new io.themis.pii.PiiAnalyzer());
     }
 
     /** Names accepted by {@code --only} and the {@code analyzers} key of .themis.yml. */

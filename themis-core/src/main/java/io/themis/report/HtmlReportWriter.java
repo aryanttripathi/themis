@@ -111,6 +111,7 @@ public final class HtmlReportWriter implements ReportWriter {
             x.put("title", f.title());
             x.put("detail", f.detail());
             x.put("dependency", f.dependency().map(Object::toString).orElse(""));
+            x.put("location", f.location().map(l -> l.file().toString().replace('\\', '/') + ":" + l.line()).orElse(""));
             x.put("evidence", f.evidence());
             findings.add(x);
         }

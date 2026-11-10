@@ -45,6 +45,22 @@ public final class ScanEngine {
         ProjectInfo project;
         DependencyGraph graph;
         ScanContext ctx;
+        // Source-only scans (secrets, PII) need no dependency graph: never run Maven/Gradle or touch the network.
+        if (enabled(config, Stage.DEPENDENCY, Stage.ADVISOR).isEmpty()) {
+            Path root = projectDir.toAbsolutePath().normalize();
+            project = new ProjectInfo(root, new io.themis.model.Coordinate("local", String.valueOf(root.getFileName()), "-"),
+                    io.themis.resolve.JavaRelease.DEFAULT, List.of(), List.of());
+            graph = DependencyGraph.empty(project.coordinate());
+            ctx = new ScanContext(project, graph, config, io.themis.resolve.DependencyMetadata.NONE);
+            int threads = Math.max(2, Runtime.getRuntime().availableProcessors());
+            ExecutorService pool = Executors.newFixedThreadPool(threads);
+            try {
+                runAll(pool, ctx, enabled(config, Stage.SOURCE), findings, errors);
+            } finally {
+                pool.shutdownNow();
+            }
+            return finish(start, project, graph, findings, errors, ctx);
+        }
         // The session stays open while analyzers run: they read dependency metadata (POM licenses) from it.
         try (ProjectSession session = resolver.open(projectDir, config)) {
             project = session.project();
@@ -62,11 +78,15 @@ public final class ScanEngine {
             }
         }
 
+        return finish(start, project, graph, findings, errors, ctx);
+    }
+
+    private ScanReport finish(Instant start, ProjectInfo project, DependencyGraph graph, List<Finding> findings,
+                              List<AnalyzerError> errors, ScanContext ctx) {
         List<Finding> sorted = new ArrayList<>(findings);
         sorted.sort(Comparator.comparing(Finding::severity).reversed()
                 .thenComparing(Finding::type)
                 .thenComparing(Finding::id));
-
         return new ScanReport(toolVersion, start, Duration.between(start, Instant.now()),
                 project, graph, sorted, errors, ctx.allData());
     }

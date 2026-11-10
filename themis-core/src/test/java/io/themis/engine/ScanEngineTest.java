@@ -79,6 +79,21 @@ class ScanEngineTest {
         assertThat(report.findings()).extracting(Finding::severity).containsExactly(Severity.CRITICAL, Severity.LOW);
     }
 
+    @Test
+    void sourceOnlyScansNeverTouchTheBuildTool() {
+        io.themis.resolve.DependencyResolver exploding = new io.themis.resolve.DependencyResolver() {
+            public boolean supports(Path p) { return true; }
+            public io.themis.resolve.ProjectSession open(Path p, ScanConfig c) { throw new AssertionError("resolver used"); }
+        };
+        Analyzer source = analyzer("src", Stage.SOURCE, ctx -> new AnalyzerResult(List.of(Finding.forDependency(
+                "r", FindingType.SECRET, Severity.HIGH, ctx.project().rootDir().getFileName().toString(), "", DEP, Map.of())), List.of()));
+
+        ScanReport report = new ScanEngine(exploding, List.of(source), "test").scan(project, ScanConfig.defaults());
+
+        assertThat(report.findings()).extracting(Finding::title).containsExactly(project.getFileName().toString());
+        assertThat(report.graph().dependencies()).isEmpty();
+    }
+
     private static AnalyzerResult result(Severity s) {
         return new AnalyzerResult(List.of(Finding.forDependency(s.name(), FindingType.VULNERABILITY, s, s.name(), "", DEP, Map.of())), List.of());
     }

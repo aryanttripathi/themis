@@ -48,7 +48,7 @@ class HtmlReportWriterTest {
                 .contains("GHSA-test")
                 .contains("Apache-2.0")
                 .contains("2.0");   // upgrade recommendation
-        for (String tab : List.of("Findings", "Vulnerabilities", "Upgrades", "Licenses", "Dependencies")) {
+        for (String tab : List.of("Findings", "Vulnerabilities", "Upgrades", "Code", "Licenses", "Dependencies")) {
             assertThat(page).contains("data-tab=\"" + tab.toLowerCase() + "\"");
         }
     }

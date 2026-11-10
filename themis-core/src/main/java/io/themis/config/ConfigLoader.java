@@ -67,6 +67,18 @@ public final class ConfigLoader {
         public NetworkDto network;
         public PrivacyDto privacy;
         public ReportDto report;
+        public SecretsDto secrets;
+        public PiiDto pii;
+    }
+
+    static final class SecretsDto {
+        public List<String> exclude;
+    }
+
+    static final class PiiDto {
+        public List<String> exclude;
+        public List<String> extraFields;
+        public List<String> ignoreFields;
     }
 
     static final class ReportDto {
@@ -202,7 +214,19 @@ public final class ConfigLoader {
         }
         return new ConfigFile(file, dto.javaRelease == null ? OptionalInt.empty() : OptionalInt.of(dto.javaRelease),
                 analyzers, failOn, severities, silenced, overrides, allow, offline, ttl, privacy(dto.privacy),
-                Optional.ofNullable(dto.report).map(x -> x.consoleLimit), Optional.ofNullable(dto.report).map(x -> x.open));
+                Optional.ofNullable(dto.report).map(x -> x.consoleLimit), Optional.ofNullable(dto.report).map(x -> x.open),
+                source(dto.secrets, dto.pii));
+    }
+
+    /** secrets.exclude and pii.exclude both apply to the source scan; pii.extraFields / ignoreFields tune the vocabulary. */
+    private static Optional<io.themis.source.SourceConfig> source(SecretsDto secrets, PiiDto pii) {
+        if (secrets == null && pii == null) return Optional.empty();
+        Set<String> exclude = new java.util.LinkedHashSet<>();
+        if (secrets != null && secrets.exclude != null) exclude.addAll(secrets.exclude);
+        if (pii != null && pii.exclude != null) exclude.addAll(pii.exclude);
+        return Optional.of(new io.themis.source.SourceConfig(exclude,
+                pii == null || pii.extraFields == null ? Set.of() : Set.copyOf(pii.extraFields),
+                pii == null || pii.ignoreFields == null ? Set.of() : Set.copyOf(pii.ignoreFields)));
     }
 
     private static Optional<io.themis.privacy.PrivacyConfig> privacy(PrivacyDto p) {

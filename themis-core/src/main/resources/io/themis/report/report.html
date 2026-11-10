@@ -88,6 +88,7 @@
     <button data-tab="findings">Findings</button>
     <button data-tab="vulnerabilities">Vulnerabilities</button>
     <button data-tab="upgrades">Upgrades</button>
+    <button data-tab="code">Secrets &amp; PII</button>
     <button data-tab="licenses">Licenses</button>
     <button data-tab="dependencies">Dependencies</button>
     <button data-tab="warnings">Warnings</button>
@@ -168,7 +169,7 @@
       text: function (r) { return [r.title, r.type, r.detail, r.dependency].join(" "); },
       detail: function (r) {
         var ev = Object.keys(r.evidence || {}).map(function (k) { return [k, k === "url" ? link(r.evidence[k]) : r.evidence[k]]; });
-        return el("div", null, r.detail ? el("p", null, r.detail) : null, kv([["Dependency", r.dependency], ["Id", el("span", {"class": "mono"}, r.id)]].concat(ev)));
+        return el("div", null, r.detail ? el("p", null, r.detail) : null, kv([["Dependency", r.dependency], ["Location", r.location], ["Id", el("span", {"class": "mono"}, r.id)]].concat(ev)));
       }
     },
     vulnerabilities: {
@@ -197,6 +198,19 @@
         return kv([["Current", r.dependency], ["Recommended", r.recommended], ["Runs on", r.requiredJava ? "Java " + r.requiredJava + "+" : ""],
                    ["Pulled in by", r.viaDirect], ["How", r.viaDirect ? "Upgrade " + r.viaDirect + ", or pin the version (Maven <dependencyManagement> / Gradle constraints)" : "Change the version in your build file"],
                    ["Note", r.note]]);
+      }
+    },
+    code: {
+      rows: data.findings.filter(function (f) { return f.type === "SECRET" || f.type === "PII"; }), sev: function (r) { return r.severity; },
+      cols: [["Severity", function (r) { return pill(r.severity); }, function (r) { return sevRank(r.severity); }],
+             ["Kind", function (r) { return r.type === "PII" ? "PII" : "Secret"; }, function (r) { return r.type; }],
+             ["Location", function (r) { return el("span", {"class": "mono"}, r.location); }, function (r) { return r.location; }],
+             ["Finding", function (r) { return r.title; }, function (r) { return r.title; }]],
+      text: function (r) { return [r.title, r.location, r.type, (r.evidence || {}).rule, (r.evidence || {}).field].join(" "); },
+      detail: function (r) {
+        var ev = r.evidence || {};
+        return el("div", null, el("p", null, r.detail), kv([["Rule", ev.rule], ["Location", el("span", {"class": "mono"}, r.location)],
+          ["Masked value", ev.masked ? el("span", {"class": "mono"}, ev.masked) : ""], ["Key", ev.key], ["Field", ev.field], ["Note", ev.note]]));
       }
     },
     licenses: {
