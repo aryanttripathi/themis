@@ -20,7 +20,14 @@ Only public package coordinates leave your machine; source code never does.
 
 ## Install
 
-**CLI**: download `themis.jar` from the [latest release](https://github.com/aryanttripathi/themis/releases/latest) and run it with Java 17+:
+**CLI** with Homebrew (macOS, Linux):
+
+```bash
+brew install aryanttripathi/tap/themis
+themis scan .
+```
+
+Or download `themis.jar` from the [latest release](https://github.com/aryanttripathi/themis/releases/latest) and run it with Java 17+:
 
 ```bash
 java -jar themis.jar scan .
